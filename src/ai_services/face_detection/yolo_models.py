@@ -196,7 +196,8 @@ class YOLOv9ONNXDetector(FaceDetector):
 
                     providers.append(("CUDAExecutionProvider", cuda_options))
                     logger.info(
-                        f"Configured {self.model_name} with {memory_limit / 1024 / 1024:.1f}MB GPU memory"
+                        f"Configured {self.model_name} with "
+                        f"{memory_limit / 1024 / 1024:.1f}MB GPU memory"
                     )
 
                 except Exception as cuda_error:
@@ -270,7 +271,8 @@ class YOLOv9ONNXDetector(FaceDetector):
                     or "allocation" in str(inference_error).lower()
                 ):
                     logger.warning(
-                        f"Memory issue in {self.model_name}, clearing cache and retrying..."
+                        f"Memory issue in {self.model_name}, "
+                        "clearing cache and retrying..."
                     )
                     if self.device == "cuda":
                         torch.cuda.empty_cache()
@@ -561,8 +563,8 @@ class YOLOv11Detector(FaceDetector):
             ):
                 try:
                     os.remove("temp_yolov11_input.jpg")
-                except:
-                    pass
+                except Exception as ex:  # Specify Exception
+                    logger.warning(f"Failed to remove temp file: {ex}")
             return []
 
     def detect_faces_raw(

@@ -13,6 +13,64 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_QUALITY_CONFIG: Dict[str, Union[int, float, Tuple[int, int]]] = {
+    "size_weight": 30,
+    "area_weight": 25,
+    "confidence_weight": 30,
+    "aspect_weight": 15,
+    "excellent_size": (80, 80),
+    "good_size": (50, 50),
+    "acceptable_size": (25, 25),
+    "minimum_size": (10, 10),
+    "bonus_score_for_high_confidence": 5.0,
+    "high_confidence_threshold": 0.7,
+}
+
+
+def _get_quality_config_value(
+    config: Optional[Dict[str, Any]], key: str, expected_type: type
+) -> Any:
+    """Helper to get a typed value from the quality configuration."""
+    value = (config or {}).get(key, DEFAULT_QUALITY_CONFIG[key])
+    if not isinstance(value, expected_type):
+        logger.warning(
+            f"Config value for {key} has unexpected type {type(value)}, "
+            f"expected {expected_type}. Using default: {DEFAULT_QUALITY_CONFIG[key]}"
+        )
+        return DEFAULT_QUALITY_CONFIG[key]
+    return value
+
+
+def _calculate_size_score(
+    face_width: float, face_height: float, config: Optional[Dict[str, Any]]
+) -> int:
+    """Calculates the size score for face quality."""
+    size_thresholds = {
+        "excellent": _get_quality_config_value(config, "excellent_size", tuple),
+        "good": _get_quality_config_value(config, "good_size", tuple),
+        "acceptable": _get_quality_config_value(config, "acceptable_size", tuple),
+        "minimum": _get_quality_config_value(config, "minimum_size", tuple),
+    }
+
+    excellent_min_w, excellent_min_h = cast(
+        Tuple[int, int], size_thresholds["excellent"]
+    )
+    good_min_w, good_min_h = cast(Tuple[int, int], size_thresholds["good"])
+    acceptable_min_w, acceptable_min_h = cast(
+        Tuple[int, int], size_thresholds["acceptable"]
+    )
+    minimum_min_w, minimum_min_h = cast(Tuple[int, int], size_thresholds["minimum"])
+
+    if face_width >= excellent_min_w and face_height >= excellent_min_h:
+        return 100
+    elif face_width >= good_min_w and face_height >= good_min_h:
+        return 85
+    elif face_width >= acceptable_min_w and face_height >= acceptable_min_h:
+        return 65
+    elif face_width >= minimum_min_w and face_height >= minimum_min_h:
+        return 45
+    return 25
+
 
 @dataclass
 class BoundingBox:
@@ -175,6 +233,46 @@ class DetectionResult:
         }
 
 
+def _calculate_area_score(
+    detection: BoundingBox, image_shape: Tuple[int, int]
+) -> int:
+    """Calculates the area score for face quality."""
+    if len(image_shape) < 2:
+        logger.warning(f"Invalid image_shape: {image_shape}")
+        image_area = 1
+    else:
+        image_area = image_shape[0] * image_shape[1]
+
+    face_area = detection.area
+    area_ratio = min(face_area / max(image_area, 1e-6) * 100, 100)
+
+    if area_ratio > 20:
+        return 100
+    elif area_ratio > 10:
+        return 90
+    elif area_ratio > 3:
+        return 80
+    elif area_ratio > 0.5:
+        return 60
+    return 40
+
+
+def _calculate_aspect_score(detection: BoundingBox) -> int:
+    """Calculates the aspect ratio score for face quality."""
+    aspect_ratio = detection.aspect_ratio
+    aspect_diff = abs(aspect_ratio - 0.8)  # Ideal aspect ratio around 0.8 (e.g., 4:5)
+
+    if aspect_diff < 0.15:
+        return 100
+    elif aspect_diff < 0.3:
+        return 85
+    elif aspect_diff < 0.5:
+        return 70
+    elif aspect_diff < 0.8:
+        return 55
+    return 35
+
+
 def calculate_face_quality(
     detection: BoundingBox,
     image_shape: Tuple[int, int],
@@ -192,109 +290,30 @@ def calculate_face_quality(
         คะแนนคุณภาพ 0-100
     """
     try:
-        # Default configuration with explicit types
-        default_config: Dict[str, Union[int, float, Tuple[int, int]]] = {
-            "size_weight": 30,
-            "area_weight": 25,
-            "confidence_weight": 30,
-            "aspect_weight": 15,
-            "excellent_size": (80, 80),
-            "good_size": (50, 50),
-            "acceptable_size": (25, 25),
-            "minimum_size": (10, 10),
-            "bonus_score_for_high_confidence": 5.0,
-            "high_confidence_threshold": 0.7,
-        }
-
+        merged_config = DEFAULT_QUALITY_CONFIG.copy()
         if config:
-            default_config.update(config)
+            merged_config.update(config)
 
-        # Extract values with type casting
-        size_thresholds = {
-            "excellent": cast(Tuple[int, int], default_config["excellent_size"]),
-            "good": cast(Tuple[int, int], default_config["good_size"]),
-            "acceptable": cast(Tuple[int, int], default_config["acceptable_size"]),
-            "minimum": cast(Tuple[int, int], default_config["minimum_size"]),
-        }
+        size_weight = _get_quality_config_value(merged_config, "size_weight", int)
+        area_weight = _get_quality_config_value(merged_config, "area_weight", int)
+        confidence_weight = _get_quality_config_value(
+            merged_config, "confidence_weight", int
+        )
+        aspect_weight = _get_quality_config_value(merged_config, "aspect_weight", int)
+        bonus_score = _get_quality_config_value(
+            merged_config, "bonus_score_for_high_confidence", float
+        )
+        high_conf_threshold = _get_quality_config_value(
+            merged_config, "high_confidence_threshold", float
+        )
 
-        # Weight values with type casting
-        size_weight = cast(int, default_config["size_weight"])
-        area_weight = cast(int, default_config["area_weight"])
-        confidence_weight = cast(int, default_config["confidence_weight"])
-        aspect_weight = cast(int, default_config["aspect_weight"])
-        bonus_score = cast(float, default_config["bonus_score_for_high_confidence"])
-        high_conf_threshold = cast(float, default_config["high_confidence_threshold"])
-
-        # คะแนนตามขนาด
-        face_width = detection.width
-        face_height = detection.height
-
-        size_score = 0
-        if (
-            face_width >= size_thresholds["excellent"][0]
-            and face_height >= size_thresholds["excellent"][1]
-        ):
-            size_score = 100
-        elif (
-            face_width >= size_thresholds["good"][0]
-            and face_height >= size_thresholds["good"][1]
-        ):
-            size_score = 85
-        elif (
-            face_width >= size_thresholds["acceptable"][0]
-            and face_height >= size_thresholds["acceptable"][1]
-        ):
-            size_score = 65
-        elif (
-            face_width >= size_thresholds["minimum"][0]
-            and face_height >= size_thresholds["minimum"][1]
-        ):
-            size_score = 45
-        else:
-            size_score = 25
-
-        # คะแนนตามสัดส่วนพื้นที่
-        if len(image_shape) < 2:
-            logger.warning(f"Invalid image_shape: {image_shape}")
-            image_area = 1
-        else:
-            image_area = image_shape[0] * image_shape[1]
-
-        face_area = detection.area
-        area_ratio = min(face_area / max(image_area, 1e-6) * 100, 100)
-
-        area_score = 0
-        if area_ratio > 20:
-            area_score = 100
-        elif area_ratio > 10:
-            area_score = 90
-        elif area_ratio > 3:
-            area_score = 80
-        elif area_ratio > 0.5:
-            area_score = 60
-        else:
-            area_score = 40
-
-        # คะแนนความมั่นใจ
+        size_score = _calculate_size_score(
+            detection.width, detection.height, merged_config
+        )
+        area_score = _calculate_area_score(detection, image_shape)
         confidence_score = detection.confidence * 100
+        aspect_score = _calculate_aspect_score(detection)
 
-        # คะแนนอัตราส่วน
-        aspect_ratio = detection.aspect_ratio
-        aspect_diff = abs(aspect_ratio - 0.8)
-
-        aspect_score = 0
-        if aspect_diff < 0.15:
-            aspect_score = 100
-        elif aspect_diff < 0.3:
-            aspect_score = 85
-        elif aspect_diff < 0.5:
-            aspect_score = 70
-        elif aspect_diff < 0.8:
-            aspect_score = 55
-        else:
-            aspect_score = 35
-
-        # คำนวณคะแนนรวม
         final_score = (
             size_score * size_weight / 100
             + area_score * area_weight / 100
@@ -302,12 +321,10 @@ def calculate_face_quality(
             + aspect_score * aspect_weight / 100
         )
 
-        # เพิ่ม bonus score สำหรับความมั่นใจสูง
         if detection.confidence >= high_conf_threshold:
             final_score += bonus_score
 
         final_score = min(final_score, 100.0)
-
         return float(max(0.0, final_score))
 
     except Exception as e:
@@ -317,7 +334,7 @@ def calculate_face_quality(
 
 def validate_bounding_box(
     bbox: BoundingBox, image_shape: Tuple[int, int], relaxed_validation: bool = True
-) -> bool:
+) -> Union[bool, Tuple[bool, str]]:  # Modified return type
     """
     ตรวจสอบความถูกต้องของ bounding box - Enhanced version
 
@@ -327,69 +344,98 @@ def validate_bounding_box(
         relaxed_validation: ใช้การตรวจสอบแบบหลวมหรือไม่
 
     Returns:
-        True ถ้า bounding box ถูกต้อง
+        True if valid, or (False, reason_string) if invalid.
     """
     try:
-        # Extract coordinates
-        x1, y1, x2, y2 = bbox.x1, bbox.y1, bbox.x2, bbox.y2
-
-        # Ensure image_shape has at least 2 elements
-        if len(image_shape) < 2:
-            logger.warning(f"Invalid image_shape: {image_shape}")
-            return False
+        if not _validate_bbox_input(bbox, image_shape):
+            return False, "Invalid bbox or image_shape input"
 
         img_height, img_width = image_shape[:2]
 
-        # Basic coordinate validation
-        if x1 < 0 or y1 < 0 or x2 < 0 or y2 < 0:
-            return False
+        if not _validate_bbox_dimensions(bbox, relaxed_validation):
+            return False, "Invalid bounding box dimensions"
 
-        # Check for valid box dimensions
-        if x2 <= x1 or y2 <= y1:
-            return False
+        # Validate boundaries
+        if not _validate_bbox_boundaries(
+            bbox, img_width, img_height, relaxed_validation
+        ):
+            return False, "Bounding box out of image boundaries"
 
-        width = x2 - x1
-        height = y2 - y1
+        # Validate area
+        if not _validate_bbox_area(bbox, img_width, img_height, relaxed_validation):
+            return False, "Bounding box area is too large or too small"
 
-        # Minimum size check
-        min_size = 8 if relaxed_validation else 16
-        if width < min_size or height < min_size:
-            return False
-
-        # Boundary checks with margin
-        margin = 10 if relaxed_validation else 5
-        if x2 > img_width + margin or y2 > img_height + margin:
-            return False
-
-        # Maximum area ratio check
-        bbox_area = width * height
-        image_area = img_width * img_height
-
-        if image_area == 0:
-            return False
-
-        area_ratio = bbox_area / image_area
-        max_area_ratio = 0.98 if relaxed_validation else 0.90
-
-        if area_ratio > max_area_ratio:
-            return False
-
-        # Aspect ratio constraints
-        if height == 0:
-            return False
-
-        aspect_ratio = width / height
-        min_aspect = 0.1 if relaxed_validation else 0.2
-        max_aspect = 15.0 if relaxed_validation else 10.0
-
-        if aspect_ratio < min_aspect or aspect_ratio > max_aspect:
-            return False
+        # Validate aspect ratio
+        if not _validate_bbox_aspect_ratio(bbox, relaxed_validation):
+            return False, "Bounding box aspect ratio is out of range"
 
         return True
 
     except Exception as e:
         logger.error(f"Bounding box validation failed: {e}")
+        return False, f"Exception during validation: {e}"
+
+
+def _validate_bbox_input(bbox: BoundingBox, image_shape: Tuple[int, int]) -> bool:
+    """Helper to validate input parameters for bbox validation."""
+    if not isinstance(bbox, BoundingBox):
+        logger.warning(f"Invalid bbox type: {type(bbox)}")
         return False
+    if len(image_shape) < 2:
+        logger.warning(f"Invalid image_shape: {image_shape}")
+        return False
+    return True
+
+
+def _validate_bbox_dimensions(bbox: BoundingBox, relaxed_validation: bool) -> bool:
+    """Helper to validate dimensions of the bounding box."""
+    if bbox.x1 < 0 or bbox.y1 < 0 or bbox.x2 < 0 or bbox.y2 < 0:
+        return False
+    if bbox.x2 <= bbox.x1 or bbox.y2 <= bbox.y1:
+        return False
+
+    min_size = 8 if relaxed_validation else 16
+    if bbox.width < min_size or bbox.height < min_size:
+        return False
+    return True
+
+
+def _validate_bbox_boundaries(
+    bbox: BoundingBox, img_width: int, img_height: int, relaxed_validation: bool
+) -> bool:
+    """Helper to validate boundaries of the bounding box."""
+    margin = 10 if relaxed_validation else 5
+    if bbox.x2 > img_width + margin or bbox.y2 > img_height + margin:
+        return False
+    return True
+
+
+def _validate_bbox_area(
+    bbox: BoundingBox, img_width: int, img_height: int, relaxed_validation: bool
+) -> bool:
+    """Helper to validate area of the bounding box."""
+    image_area = img_width * img_height
+    if image_area == 0:
+        return False
+
+    area_ratio = bbox.area / image_area
+    max_area_ratio = 0.98 if relaxed_validation else 0.90
+    if area_ratio > max_area_ratio:
+        return False
+    return True
+
+
+def _validate_bbox_aspect_ratio(bbox: BoundingBox, relaxed_validation: bool) -> bool:
+    """Helper to validate aspect ratio of the bounding box."""
+    if bbox.height == 0:
+        return False
+
+    aspect_ratio = bbox.width / bbox.height
+    min_aspect = 0.1 if relaxed_validation else 0.2
+    max_aspect = 15.0 if relaxed_validation else 10.0
+    if aspect_ratio < min_aspect or aspect_ratio > max_aspect:
+        return False
+    return True
 
 
 def filter_detection_results(

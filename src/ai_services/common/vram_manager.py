@@ -143,7 +143,8 @@ class VRAMManager:
                 if model_id in self.model_allocations:
                     allocation = self.model_allocations[model_id]
                     logger.info(
-                        f"📋 Model {model_id} already allocated at {allocation.location.value}"
+                        f"📋 Model {model_id} already allocated at "
+                        f"{allocation.location.value}"
                     )
                     return allocation
 
@@ -172,7 +173,8 @@ class VRAMManager:
                         )
                         if freed < vram_required - available_vram:
                             logger.error(
-                                f"❌ Cannot free enough VRAM for critical model {model_id}"
+                                "❌ Cannot free enough VRAM for critical model "
+                                f"{model_id}"
                             )
 
                     # Check VRAM again after freeing
@@ -188,15 +190,20 @@ class VRAMManager:
                             status="allocated_on_gpu",
                         )
                         self.model_allocations[model_id] = allocation
+                        # Log event
                         logger.info(
-                            f"✅ Allocated {vram_required / 1024 / 1024:.1f}MB VRAM for {model_id}"
+                            f"✅ Allocated {vram_required / 1024 / 1024:.1f}MB "
+                            f"VRAM for {model_id}"
                         )
+
                         self._log_allocation_event("allocated", allocation)
                         return allocation
 
                 # If not enough VRAM, fallback to CPU
                 logger.warning(
-                    f"⚠️ Insufficient VRAM for {model_id} ({vram_required / 1024 / 1024:.1f}MB > {available_vram / 1024 / 1024:.1f}MB)"
+                    f"⚠️ Insufficient VRAM for {model_id} "
+                    f"({vram_required / 1024 / 1024:.1f}MB > "
+                    f"{available_vram / 1024 / 1024:.1f}MB)"
                 )
                 allocation = ModelAllocation(
                     model_id=model_id,
@@ -245,7 +252,8 @@ class VRAMManager:
             # Move model to CPU
             vram_freed += allocation.vram_allocated
             logger.info(
-                f"🔄 Moving model {allocation.model_id} to CPU to free {allocation.vram_allocated / 1024 / 1024:.1f}MB"
+                f"🔄 Moving model {allocation.model_id} to CPU to free "
+                f"{allocation.vram_allocated / 1024 / 1024:.1f}MB"
             )
 
             # Update allocation status
@@ -305,7 +313,9 @@ class VRAMManager:
                     if allocation.location == AllocationLocation.GPU:
                         self.allocated_vram -= allocation.vram_allocated
                         logger.info(
-                            f"🔓 Released {allocation.vram_allocated / 1024 / 1024:.1f}MB VRAM from {model_id}"
+                            f"🔓 Released "
+                            f"{allocation.vram_allocated / 1024 / 1024:.1f}MB "
+                            f"VRAM from {model_id}"
                         )
 
                     # Log event
@@ -434,7 +444,8 @@ class VRAMManager:
                             allocation.status = "optimized_to_gpu"
                             optimized = True
                             logger.info(
-                                f"🚀 Optimized: Moved critical model {allocation.model_id} to GPU"
+                                "🚀 Optimized: Moved critical model "
+                                f"{allocation.model_id} to GPU"
                             )
 
                 return optimized

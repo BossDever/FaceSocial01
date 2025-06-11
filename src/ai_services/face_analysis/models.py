@@ -15,8 +15,12 @@ from enum import Enum
 
 # Import related models
 try:
-    from ..face_detection.models import DetectionConfig, DetectionEngine
-    from ..face_recognition.models import RecognitionModel, RecognitionQuality
+    from ..face_detection import models as face_detection_models
+    from ..face_recognition import models as face_recognition_models
+    DetectionConfig = face_detection_models.DetectionConfig
+    DetectionEngine = face_detection_models.DetectionEngine
+    RecognitionModel = face_recognition_models.RecognitionModel
+    RecognitionQuality = face_recognition_models.RecognitionQuality
 except ImportError:
     # Fallback definitions
     class DetectionEngine(Enum):

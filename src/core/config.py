@@ -1,212 +1,276 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Face Recognition System - Main Application
-SuwitBoss/wofk - Clean & Organized Version
+Core Configuration Module
+Settings and configuration management for the Face Recognition System
 """
 
 import os
-import sys
-import logging
-from pathlib import Path
-from contextlib import asynccontextmanager
-from typing import Dict, Any, AsyncGenerator
-
-# Add project root to Python path FIRST
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# Standard library and third-party imports
-import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-
-# Import core components - after sys.path modification
-from src.core.config import get_settings  # type: ignore
-from src.core.vram_manager import VRAMManager  # type: ignore
-
-# Import AI services
-from src.ai_services.face_detection.face_detection_service import FaceDetectionService  # type: ignore
-from src.ai_services.face_recognition.face_recognition_service import (
-    FaceRecognitionService,
-)  # type: ignore
-from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService  # type: ignore
-
-# Import API routes
-from src.api.face_detection import router as face_detection_router  # type: ignore
-from src.api.face_recognition import router as face_recognition_router  # type: ignore
-from src.api.face_analysis import router as face_analysis_router  # type: ignore
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("logs/app.log")],
-)
-
-logger = logging.getLogger(__name__)
-
-# Global service instances
-services: Dict[str, Any] = {}
+from typing import Dict, Any
+from dataclasses import dataclass, field
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan manager"""
+@dataclass
+class Settings:
+    """Application settings and configuration"""
 
-    # Startup
-    logger.info("🚀 Starting Face Recognition System...")
+    # VRAM Manager Configuration
+    vram_config: Dict[str, Any] = field(default_factory=lambda: {
+        "reserved_vram_mb": 512,
+        "max_history_size": 1000,
+        "model_vram_estimates": {
+            "yolov9c-face": 1024 * 1024 * 1024,  # 1GB
+            "yolov9e-face": 1536 * 1024 * 1024,  # 1.5GB
+            "yolov11m-face": 1024 * 1024 * 1024,  # 1GB
+            "facenet-face-recognition": 512 * 1024 * 1024,  # 512MB
+            "adaface-face-recognition": 512 * 1024 * 1024,  # 512MB
+            "arcface-face-recognition": 512 * 1024 * 1024,  # 512MB
+        }
+    })
 
-    try:
-        # Get settings
-        settings = get_settings()
+    # Face Detection Service Configuration
+    detection_config: Dict[str, Any] = field(default_factory=lambda: {
+        "use_enhanced_detector": False,
+        "yolov9c_model_path": "model/face-detection/yolov9c-face-lindevs.onnx",
+        "yolov9e_model_path": "model/face-detection/yolov9e-face-lindevs.onnx",
+        "yolov11m_model_path": "model/face-detection/yolov11m-face.pt",
+        "max_usable_faces_yolov9": 12,
+        "min_agreement_ratio": 0.5,
+        "min_quality_threshold": 40,
+        "iou_threshold_agreement": 0.3,
+        "conf_threshold": 0.10,
+        "iou_threshold_nms": 0.35,
+        "img_size": 640,
+        "quality_config": {
+            "min_quality_threshold": 40,
+            "size_weight": 30,
+            "area_weight": 25,
+            "confidence_weight": 30,
+            "aspect_weight": 15,
+            "excellent_size": (80, 80),
+            "good_size": (50, 50),
+            "acceptable_size": (24, 24),
+            "minimum_size": (8, 8),
+            "bonus_score_for_high_confidence": 5.0,
+            "high_confidence_threshold": 0.7,
+        },
+        "fallback_config": {
+            "enable_fallback_system": True,
+            "max_fallback_attempts": 3,
+            "fallback_models": [
+                {
+                    "model_name": "yolov11m",
+                    "conf_threshold": 0.15,
+                    "iou_threshold": 0.35,
+                    "min_faces_to_accept": 1,
+                },
+                {
+                    "model_name": "yolov9c",
+                    "conf_threshold": 0.05,
+                    "iou_threshold": 0.3,
+                    "min_faces_to_accept": 1,
+                },
+                {
+                    "model_name": "opencv_haar",
+                    "scale_factor": 1.1,
+                    "min_neighbors": 3,
+                    "min_size": (20, 20),
+                    "min_faces_to_accept": 1,
+                },
+            ],
+            "min_detections_after_fallback": 1,
+            "always_run_all_fallbacks_if_zero_initial": True,
+        },
+        "filter_min_quality": 30.0,
+        "filter_min_quality_final": 40.0,
+    })
 
-        # Create necessary directories
-        for directory in [
-            "logs",
-            "output",
-            "output/detection",
-            "output/recognition",
-            "output/analysis",
-        ]:
-            os.makedirs(directory, exist_ok=True)
+    # Face Recognition Service Configuration
+    recognition_config: Dict[str, Any] = field(default_factory=lambda: {
+        "preferred_model": "facenet",
+        "similarity_threshold": 0.60,
+        "unknown_threshold": 0.55,
+        "embedding_dimension": 512,
+        "enable_gpu_optimization": True,
+        "batch_size": 8,
+        "quality_threshold": 0.2,
+        "cuda_memory_fraction": 0.8,
+        "use_cuda_graphs": False,
+        "parallel_processing": True,
+        "enable_quality_assessment": True,
+        "auto_model_selection": True,
+        "enable_unknown_detection": True,
+    })
 
-        # Initialize VRAM Manager
-        vram_manager = VRAMManager(settings.vram_config)
-        services["vram_manager"] = vram_manager
+    # Face Analysis Service Configuration
+    analysis_config: Dict[str, Any] = field(default_factory=lambda: {
+        "detection": {},  # Will use detection_config
+        "recognition": {},  # Will use recognition_config
+        "default_mode": "full_analysis",
+        "default_quality_level": "balanced",
+        "enable_batch_processing": True,
+        "max_batch_size": 16,
+        "enable_parallel_processing": True,
+        "default_confidence_threshold": 0.5,
+        "default_max_faces": 50,
+        "default_gallery_top_k": 5,
+    })
 
-        # Initialize Face Detection Service
-        face_detection_service = FaceDetectionService(
-            vram_manager=vram_manager, config=settings.detection_config
-        )
+    # API Configuration
+    api_config: Dict[str, Any] = field(default_factory=lambda: {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "reload": True,
+        "log_level": "info",
+        "max_upload_size": 10 * 1024 * 1024,  # 10MB
+        "allowed_image_types": ["image/jpeg", "image/png", "image/jpg"],
+        "cors_origins": ["*"],
+        "docs_url": "/docs",
+        "redoc_url": "/redoc",
+    })
 
-        if await face_detection_service.initialize():
-            services["face_detection"] = face_detection_service
-            logger.info("✅ Face Detection Service initialized")
-        else:
-            logger.error("❌ Failed to initialize Face Detection Service")
+    # Logging Configuration
+    logging_config: Dict[str, Any] = field(default_factory=lambda: {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "log_file": "logs/app.log",
+        "max_file_size": 10 * 1024 * 1024,  # 10MB
+        "backup_count": 5,
+        "enable_console_logging": True,
+        "enable_file_logging": True,
+    })
 
-        # Initialize Face Recognition Service
-        face_recognition_service = FaceRecognitionService(
-            vram_manager=vram_manager, config=settings.recognition_config
-        )
 
-        if await face_recognition_service.initialize():
-            services["face_recognition"] = face_recognition_service
-            logger.info("✅ Face Recognition Service initialized")
-        else:
-            logger.error("❌ Failed to initialize Face Recognition Service")
+def get_settings() -> Settings:
+    """
+    Get application settings
 
-        # Initialize Face Analysis Service (Integration)
-        if "face_detection" in services and "face_recognition" in services:
-            face_analysis_service = FaceAnalysisService(
-                vram_manager=vram_manager, config=settings.analysis_config
-            )
+    This function loads settings from environment variables or uses defaults.
+    Override specific settings via environment variables:
 
-            if await face_analysis_service.initialize():
-                services["face_analysis"] = face_analysis_service
-                logger.info("✅ Face Analysis Service initialized")
+    - FACE_RECOGNITION_HOST: API host (default: 0.0.0.0)
+    - FACE_RECOGNITION_PORT: API port (default: 8080)
+    - FACE_RECOGNITION_LOG_LEVEL: Logging level (default: INFO)
+    - FACE_RECOGNITION_GPU_ENABLED: Enable GPU optimization (default: True)
+    """
+    settings = Settings()
 
-        # Inject services into API routers
-        face_detection_router.service = services.get("face_detection")
-        face_recognition_router.service = services.get("face_recognition")
-        face_analysis_router.service = services.get("face_analysis")
+    # Override from environment variables
+    host_env = os.getenv("FACE_RECOGNITION_HOST")
+    if host_env:
+        settings.api_config["host"] = host_env
 
-        logger.info("🎉 All services initialized successfully!")
-
-        yield
-
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize services: {e}")
-        yield
-
-    # Shutdown
-    logger.info("🛑 Shutting down Face Recognition System...")
-
-    for service_name, service in services.items():
+    port_env = os.getenv("FACE_RECOGNITION_PORT")
+    if port_env:
         try:
-            if hasattr(service, "cleanup"):
-                await service.cleanup()
-            logger.info(f"✅ {service_name} cleaned up")
-        except Exception as e:
-            logger.error(f"❌ Error cleaning up {service_name}: {e}")
+            settings.api_config["port"] = int(port_env)
+        except ValueError:
+            pass
 
-    logger.info("✅ Shutdown complete")
+    log_level_env = os.getenv("FACE_RECOGNITION_LOG_LEVEL")
+    if log_level_env:
+        log_level = log_level_env.upper()
+        if log_level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+            settings.logging_config["level"] = log_level
 
+    gpu_env = os.getenv("FACE_RECOGNITION_GPU_ENABLED")
+    if gpu_env:
+        gpu_enabled = gpu_env.lower()
+        if gpu_enabled in ["true", "1", "yes"]:
+            settings.recognition_config["enable_gpu_optimization"] = True
+        elif gpu_enabled in ["false", "0", "no"]:
+            settings.recognition_config["enable_gpu_optimization"] = False
 
-# Create FastAPI application
-app = FastAPI(
-    title="Face Recognition System API",
-    description="Professional Face Detection, Recognition & Analysis System",
-    version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
+    model_dir_env = os.getenv("FACE_RECOGNITION_MODEL_DIR")
+    if model_dir_env:
+        # Update model paths
+        settings.detection_config.update({
+            "yolov9c_model_path": os.path.join(
+                model_dir_env, "face-detection/yolov9c-face-lindevs.onnx"
+            ),
+            "yolov9e_model_path": os.path.join(
+                model_dir_env, "face-detection/yolov9e-face-lindevs.onnx"
+            ),
+            "yolov11m_model_path": os.path.join(
+                model_dir_env, "face-detection/yolov11m-face.pt"
+            ),
+        })
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include API routers
-app.include_router(face_detection_router, prefix="/api")
-app.include_router(face_recognition_router, prefix="/api")
-app.include_router(face_analysis_router, prefix="/api")
-
-# Mount static files
-app.mount("/output", StaticFiles(directory="output"), name="output")
-
-
-@app.get("/")
-async def root() -> RedirectResponse:
-    """Root endpoint"""
-    return RedirectResponse(url="/docs")
+    return settings
 
 
-@app.get("/health")
-async def health_check() -> Dict[str, Any]:
-    """Health check endpoint"""
-    try:
-        return {
-            "status": "healthy",
-            "services": {
-                "face_detection": "face_detection" in services,
-                "face_recognition": "face_recognition" in services,
-                "face_analysis": "face_analysis" in services,
-                "vram_manager": "vram_manager" in services,
-            },
-            "version": "2.0.0",
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e), "version": "2.0.0"}
+def get_model_paths() -> Dict[str, str]:
+    """Get model file paths"""
+    settings = get_settings()
+
+    return {
+        "yolov9c": settings.detection_config["yolov9c_model_path"],
+        "yolov9e": settings.detection_config["yolov9e_model_path"],
+        "yolov11m": settings.detection_config["yolov11m_model_path"],
+        "facenet": "model/face-recognition/facenet_vggface2.onnx",
+        "adaface": "model/face-recognition/adaface_ir101.onnx",
+        "arcface": "model/face-recognition/arcface_r100.onnx",
+    }
 
 
-@app.get("/system/info")
-async def system_info() -> Dict[str, Any]:
-    """System information endpoint"""
-    try:
-        vram_status = {}
-        if "vram_manager" in services:
-            vram_status = await services["vram_manager"].get_vram_status()
+def validate_model_files() -> Dict[str, bool]:
+    """Validate that required model files exist"""
+    model_paths = get_model_paths()
+    validation_results = {}
 
-        return {
-            "system": "Face Recognition System",
-            "version": "2.0.0",
-            "services_count": len(services),
-            "vram_status": vram_status,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    for model_name, model_path in model_paths.items():
+        validation_results[model_name] = os.path.exists(model_path)
+
+    return validation_results
 
 
-if __name__ == "__main__":
-    uvicorn.run(
-        "src.main:app", host="0.0.0.0", port=8080, reload=True, log_level="info"
-    )
+def create_required_directories() -> None:
+    """Create required directories for the application"""
+    directories = [
+        "logs",
+        "output",
+        "output/detection",
+        "output/recognition",
+        "output/analysis",
+        "model",
+        "model/face-detection",
+        "model/face-recognition",
+        "temp",
+    ]
+
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+
+
+# Environment-specific configurations
+def get_development_settings() -> Settings:
+    """Get settings optimized for development"""
+    settings = get_settings()
+    settings.api_config.update({
+        "reload": True,
+        "log_level": "debug",
+    })
+    settings.logging_config["level"] = "DEBUG"
+    return settings
+
+
+def get_production_settings() -> Settings:
+    """Get settings optimized for production"""
+    settings = get_settings()
+    settings.api_config.update({
+        "reload": False,
+        "log_level": "info",
+    })
+    settings.logging_config["level"] = "INFO"
+    return settings
+
+
+def get_testing_settings() -> Settings:
+    """Get settings optimized for testing"""
+    settings = get_settings()
+    settings.api_config.update({
+        "port": 8081,  # Different port for testing
+        "log_level": "warning",
+    })
+    settings.logging_config["level"] = "WARNING"
+    # Disable GPU for testing to avoid conflicts
+    settings.recognition_config["enable_gpu_optimization"] = False
+    return settings

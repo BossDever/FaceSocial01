@@ -8,7 +8,7 @@ Enhanced End-to-End Solution with better error handling and performance
 
 import numpy as np
 import cv2
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 import logging
 import time
 import asyncio
@@ -107,6 +107,115 @@ class FaceAnalysisService:
             self.logger.error(f"❌ Face Analysis Service initialization failed: {e}")
             return False
 
+    async def _handle_detection(
+        self, image: np.ndarray, config: AnalysisConfig
+    ) -> Tuple[List[FaceResult], float, Optional[str]]:
+        """Handles the face detection part of the analysis."""
+        detection_start_time = time.time()
+        if not self.face_detection_service:
+            raise RuntimeError("Face detection service not available")
+
+        try:
+            detection_result = await self.face_detection_service.detect_faces(
+                image,
+                model_name=config.detection_model,
+                conf_threshold=config.confidence_threshold,
+                min_face_size=config.min_face_size,
+                max_faces=config.max_faces,
+                return_landmarks=True,
+                min_quality_threshold=60.0
+                if config.use_quality_based_selection
+                else 30.0,
+            )
+            detection_time = time.time() - detection_start_time
+            detection_model_used = detection_result.model_used
+            self.logger.info(
+                f"Detection: {len(detection_result.faces)} faces "
+                f"in {detection_time:.3f}s"
+            )
+            faces = await self._convert_detection_results(
+                detection_result, config, image
+            )
+            return faces, detection_time, detection_model_used
+        except Exception as det_error:
+            self.logger.error(f"❌ Detection failed: {det_error}")
+            detection_time = time.time() - detection_start_time
+            return [], detection_time, None
+
+    async def _handle_recognition(
+        self,
+        image: np.ndarray,
+        faces: List[FaceResult],
+        config: AnalysisConfig,
+        gallery: Optional[Dict[str, Any]],
+    ) -> Tuple[float, Optional[str]]:
+        """Handles the face recognition part of the analysis."""
+        recognition_start_time = time.time()
+        recognition_model_used = None
+        if not self.face_recognition_service:
+            self.logger.warning("Face recognition service not available")
+            return time.time() - recognition_start_time, recognition_model_used
+
+        try:
+            quality_threshold = (
+                60.0 if config.use_quality_based_selection else 0.0
+            )
+            processable_faces = [
+                f for f in faces if f.quality_score >= quality_threshold
+            ]
+
+            if processable_faces:
+                await self._process_recognition_for_faces(
+                    image, processable_faces, config, gallery
+                )
+                recognized_faces_count = sum(
+                    1 for f in processable_faces if f.has_identity
+                )
+                recognition_model_used = config.recognition_model
+
+                self.logger.info(
+                    f"Recognition: {recognized_faces_count}/"
+                    f"{len(processable_faces)} faces recognized"
+                )
+
+        except Exception as rec_error:
+            self.logger.error(f"❌ Recognition failed: {rec_error}")
+
+        return time.time() - recognition_start_time, recognition_model_used
+
+    async def _handle_recognition_only(
+        self, image: np.ndarray, config: AnalysisConfig, gallery: Dict[str, Any]
+    ) -> Tuple[List[FaceResult], float, Optional[str]]:
+        """Handles the recognition-only mode."""
+        recognition_start_time = time.time()
+        faces: List[FaceResult] = []
+        recognition_model_used = None
+
+        if not self.face_recognition_service:
+            raise RuntimeError("Face recognition service not available")
+
+        try:
+            recognition_result = await self.face_recognition_service.recognize_face(
+                image,
+                gallery,
+                config.recognition_model,
+                config.gallery_top_k,
+            )
+            face_result = await self._create_recognition_only_result(
+                image, recognition_result
+            )
+            if face_result:
+                faces.append(face_result)
+            recognition_model_used = (
+                recognition_result.model_used.value
+                if recognition_result.model_used
+                else None
+            )
+        except Exception as rec_error:
+            self.logger.error(f"❌ Recognition-only failed: {rec_error}")
+
+        return faces, time.time() - recognition_start_time, recognition_model_used
+
     async def analyze_faces(
         self,
         image: np.ndarray,
@@ -127,128 +236,40 @@ class FaceAnalysisService:
         start_time = time.time()
         detection_time = 0.0
         recognition_time = 0.0
+        faces: List[FaceResult] = []
+        detection_model_used = None
+        recognition_model_used = None
 
         try:
-            faces = []
-            detection_model_used = None
-            recognition_model_used = None
-
-            # Step 1: Face Detection (ถ้าต้องการ)
+            # Step 1: Face Detection
             if config.mode in [
                 AnalysisMode.DETECTION_ONLY,
                 AnalysisMode.FULL_ANALYSIS,
                 AnalysisMode.COMPREHENSIVE,
             ]:
-                if not self.face_detection_service:
-                    raise RuntimeError("Face detection service not available")
+                faces, detection_time, detection_model_used = (
+                    await self._handle_detection(image, config)
+                )
 
-                detection_start = time.time()
-
-                try:
-                    detection_result = await self.face_detection_service.detect_faces(
-                        image,
-                        model_name=config.detection_model,
-                        conf_threshold=config.confidence_threshold,
-                        min_face_size=config.min_face_size,
-                        max_faces=config.max_faces,
-                        return_landmarks=True,
-                        min_quality_threshold=60.0
-                        if config.use_quality_based_selection
-                        else 30.0,
-                    )
-
-                    detection_time = time.time() - detection_start
-                    detection_model_used = detection_result.model_used
-
-                    self.logger.info(
-                        f"Detection: {len(detection_result.faces)} faces in {detection_time:.3f}s"
-                    )
-
-                    # แปลง detection results เป็น FaceResult
-                    faces = await self._convert_detection_results(
-                        detection_result, config, image
-                    )
-
-                except Exception as det_error:
-                    self.logger.error(f"❌ Detection failed: {det_error}")
-                    detection_time = time.time() - detection_start
-                    # Continue with empty faces list
-
-            # Step 2: Face Recognition (ถ้าต้องการ)
+            # Step 2: Face Recognition
             if (
                 config.mode in [AnalysisMode.FULL_ANALYSIS, AnalysisMode.COMPREHENSIVE]
                 and gallery
                 and config.enable_gallery_matching
                 and faces
             ):
-                if not self.face_recognition_service:
-                    self.logger.warning("Face recognition service not available")
-                else:
-                    recognition_start = time.time()
-
-                    try:
-                        # ประมวลผล recognition สำหรับใบหน้าที่มีคุณภาพดี
-                        quality_threshold = (
-                            60.0 if config.use_quality_based_selection else 0.0
-                        )
-                        processable_faces = [
-                            f for f in faces if f.quality_score >= quality_threshold
-                        ]
-
-                        if processable_faces:
-                            await self._process_recognition_for_faces(
-                                image, processable_faces, config, gallery
-                            )
-
-                            # Count successful recognitions
-                            recognized_faces = [
-                                f for f in processable_faces if f.has_identity
-                            ]
-                            recognition_model_used = config.recognition_model
-
-                            self.logger.info(
-                                f"Recognition: {len(recognized_faces)}/{len(processable_faces)} faces recognized"
-                            )
-
-                    except Exception as rec_error:
-                        self.logger.error(f"❌ Recognition failed: {rec_error}")
-
-                    recognition_time = time.time() - recognition_start
+                recognition_time, recognition_model_used_rec = (
+                    await self._handle_recognition(image, faces, config, gallery)
+                )
+                # Prioritize recognition model if available
+                if recognition_model_used_rec:
+                    recognition_model_used = recognition_model_used_rec
 
             # Step 3: Handle recognition-only mode
-            elif config.mode == AnalysisMode.RECOGNITION_ONLY:
-                if not self.face_recognition_service:
-                    raise RuntimeError("Face recognition service not available")
-
-                # For recognition-only, assume the entire image is a face
-                recognition_start = time.time()
-
-                try:
-                    if gallery:
-                        recognition_result = (
-                            await self.face_recognition_service.recognize_face(
-                                image,
-                                gallery,
-                                config.recognition_model,
-                                config.gallery_top_k,
-                            )
-                        )
-
-                        # Create a single face result for the entire image
-                        face_result = await self._create_recognition_only_result(
-                            image, recognition_result
-                        )
-                        faces = [face_result] if face_result else []
-                        recognition_model_used = (
-                            recognition_result.model_used.value
-                            if recognition_result.model_used
-                            else None
-                        )
-
-                except Exception as rec_error:
-                    self.logger.error(f"❌ Recognition-only failed: {rec_error}")
-
-                recognition_time = time.time() - recognition_start
+            elif config.mode == AnalysisMode.RECOGNITION_ONLY and gallery:
+                faces, recognition_time, recognition_model_used = (
+                    await self._handle_recognition_only(image, config, gallery)
+                )
 
             total_time = time.time() - start_time
 
@@ -330,6 +351,32 @@ class FaceAnalysisService:
 
         return faces
 
+    async def _execute_recognition_tasks(
+        self, recognition_tasks: List[asyncio.Task], parallel_processing: bool
+    ):
+        """Executes recognition tasks either in parallel or sequentially."""
+        if parallel_processing and len(recognition_tasks) > 1:
+            try:
+                await asyncio.gather(*recognition_tasks, return_exceptions=True)
+            except Exception as e:
+                self.logger.error(f"❌ Parallel recognition failed: {e}")
+                # Fallback to sequential processing if gather fails
+                # (though return_exceptions=True should prevent this)
+                for task in recognition_tasks:
+                    try:
+                        await task
+                    except Exception as task_error:
+                        self.logger.warning(
+                            f"⚠️ Recognition task failed (fallback): {task_error}"
+                        )
+        else:
+            # Sequential processing
+            for task in recognition_tasks:
+                try:
+                    await task
+                except Exception as task_error:
+                    self.logger.warning(f"⚠️ Recognition task failed: {task_error}")
+
     async def _process_recognition_for_faces(
         self,
         image: np.ndarray,
@@ -342,46 +389,28 @@ class FaceAnalysisService:
             return
 
         recognition_tasks = []
-
         for face_result in faces:
             try:
-                # ตัดใบหน้า
                 face_crop = face_result.face_crop
                 if face_crop is None:
                     face_crop = self._extract_face_crop(image, face_result.bbox)
 
                 if face_crop is not None:
-                    # สร้าง task สำหรับ recognition
                     task = self._recognize_single_face(
                         face_result, face_crop, config, gallery
                     )
-                    recognition_tasks.append(task)
+                    # Ensure it's a task
+                    recognition_tasks.append(asyncio.create_task(task))
                 else:
                     self.logger.warning("⚠️ Failed to extract face crop for recognition")
-
             except Exception as e:
                 self.logger.warning(f"⚠️ Error preparing face for recognition: {e}")
                 continue
 
-        # ประมวลผลแบบ parallel ถ้าเปิดใช้งาน
-        if config.parallel_processing and len(recognition_tasks) > 1:
-            try:
-                await asyncio.gather(*recognition_tasks, return_exceptions=True)
-            except Exception as e:
-                self.logger.error(f"❌ Parallel recognition failed: {e}")
-                # Fallback to sequential processing
-                for task in recognition_tasks:
-                    try:
-                        await task
-                    except Exception as task_error:
-                        self.logger.warning(f"⚠️ Recognition task failed: {task_error}")
-        else:
-            # Sequential processing
-            for task in recognition_tasks:
-                try:
-                    await task
-                except Exception as task_error:
-                    self.logger.warning(f"⚠️ Recognition task failed: {task_error}")
+        if recognition_tasks:
+            await self._execute_recognition_tasks(
+                recognition_tasks, config.parallel_processing
+            )
 
     async def _recognize_single_face(
         self,
@@ -685,9 +714,10 @@ class FaceAnalysisService:
             )
 
         if self.face_recognition_service:
-            stats["recognition_service_stats"] = (
+            recognition_stats = (
                 self.face_recognition_service.get_performance_stats().to_dict()
             )
+            stats["recognition_service_stats"] = recognition_stats
 
         return stats
 
@@ -717,6 +747,7 @@ class FaceAnalysisService:
             # Recognition models
             if self.face_recognition_service:
                 # Add model information
+                # Consider fetching this from the service if it becomes dynamic
                 result["recognition_models"] = {
                     "facenet": {"embedding_size": 512, "input_size": [160, 160]},
                     "adaface": {"embedding_size": 512, "input_size": [112, 112]},
@@ -739,7 +770,7 @@ class FaceAnalysisService:
 
         try:
             if detection_model and self.face_detection_service:
-                # Detection models are handled differently - they're selected dynamically
+                # Detection models are selected dynamically, not switched here.
                 results["detection"] = True  # Placeholder
                 self.logger.info(
                     f"Detection model preference set to: {detection_model}"

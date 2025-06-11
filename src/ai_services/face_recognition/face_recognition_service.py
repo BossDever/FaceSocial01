@@ -8,7 +8,7 @@ import numpy as np
 import cv2
 import os
 import time
-from typing import Optional, Dict, Any, List, Union, cast
+from typing import Optional, Dict, Any, List, Union, cast, Tuple
 
 # Conditional imports
 try:
@@ -129,111 +129,204 @@ class FaceRecognitionService:
             self.logger.error(f"❌ Error initializing service: {e}")
             return False
 
+    def _cleanup_previous_model(self) -> None:
+        """Clean up previous model and free memory, also reset type."""
+        if self.current_model is not None:
+            model_type_val = (
+                self.current_model_type.value
+                if self.current_model_type
+                else "Unknown type"
+            )
+            self.logger.debug(f"Cleaning up previous model: {model_type_val}")
+            del self.current_model
+            self.current_model = None
+            if TORCH_AVAILABLE and torch and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            self.logger.debug("Previous model internal resources released.")
+
+        # Always reset current_model_type to ensure clean state for next load
+        if self.current_model_type is not None:
+            model_type_val = (
+                self.current_model_type.value
+                if self.current_model_type
+                else "None"
+            )
+            self.logger.debug(f"Resetting current model type from {model_type_val}.")
+        self.current_model_type = None
+        self.logger.debug("Model state (current_model and current_model_type) reset.")
+
+    def _validate_model_config(
+        self, model_type: RecognitionModel
+    ) -> Optional[Dict[str, Union[str, tuple, list, int]]]:
+        """Validate and get model configuration"""
+        model_config = self.model_configs.get(model_type)
+        if not model_config:
+            self.logger.error(f"❌ Unknown model type: {model_type}")
+            return None
+
+        model_path = cast(str, model_config["model_path"])
+        if not os.path.exists(model_path):
+            self.logger.error(f"❌ Model file not found: {model_path}")
+            return None
+
+        return model_config
+
+    def _configure_session_options(self) -> Optional[Any]:
+        """Configure ONNX session options"""
+        if not ort:
+            self.logger.error("❌ ONNX Runtime not available")
+            return None
+
+        session_options = ort.SessionOptions()
+        session_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+        )
+        session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        return session_options
+
+    def _try_configure_cuda_provider(
+        self, model_type: RecognitionModel
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Attempts to configure the CUDAExecutionProvider."""
+        if not (
+            self.config.enable_gpu_optimization
+            and TORCH_AVAILABLE
+            and torch is not None  # Check torch object itself
+            and torch.cuda.is_available()
+        ):
+            self.logger.debug(
+                f"CUDA prerequisites not met for {model_type.value} "
+                f"(enable_gpu_optimization: {self.config.enable_gpu_optimization}, "
+                f"TORCH_AVAILABLE: {TORCH_AVAILABLE}, "
+                f"torch is not None: {torch is not None}, "
+                f"cuda.is_available: {torch.cuda.is_available() if torch else 'N/A'})."
+            )
+            return None
+
+        try:
+            # Consider making these configurable if they vary per model or setup
+            gpu_mem_limit = int(2 * 1024 * 1024 * 1024)  # 2GB
+            cuda_options: Dict[str, Any] = {
+                "device_id": 0,  # Make configurable if multi-GPU
+                "arena_extend_strategy": "kSameAsRequested",
+                "gpu_mem_limit": gpu_mem_limit,
+                "cudnn_conv_algo_search": "HEURISTIC",
+            }
+            self.logger.info(
+                f"🔥 Attempting to configure CUDAExecutionProvider for "
+                f"{model_type.value} with {gpu_mem_limit / (1024**2):.0f}MB limit."
+            )
+            return ("CUDAExecutionProvider", cuda_options)
+        except Exception as cuda_error:
+            self.logger.warning(
+                f"⚠️ CUDAExecutionProvider configuration failed for "
+                f"{model_type.value}: {cuda_error}. Will attempt to use CPU."
+            )
+            return None
+
+    def _configure_providers(
+        self, model_type: RecognitionModel
+    ) -> List[Union[str, Tuple[str, Dict[str, Any]]]]:
+        """Configure execution providers for ONNX"""
+        providers: List[Union[str, Tuple[str, Dict[str, Any]]]] = []
+
+        cuda_provider_config = self._try_configure_cuda_provider(model_type)
+        if cuda_provider_config:
+            providers.append(cuda_provider_config)
+            self.logger.info(
+                f"✅ CUDAExecutionProvider successfully configured and added for "
+                f"{model_type.value}."
+            )
+        else:
+            self.logger.info(
+                f"ℹ️ CUDAExecutionProvider not added for {model_type.value} "
+                f"(not available, disabled, or config error)."
+            )
+
+        providers.append("CPUExecutionProvider")
+        self.logger.debug(f"Final providers for {model_type.value}: {providers}")
+        return providers
+
+    def _log_model_success(self, model_type: RecognitionModel) -> None:
+        """Log successful model loading"""
+        if self.current_model:
+            actual_providers = self.current_model.get_providers()
+            device_used = (
+                "GPU" if "CUDAExecutionProvider" in actual_providers else "CPU"
+            )
+
+            self.logger.info(
+                f"✅ {model_type.value} loaded successfully on {device_used}"
+            )
+            self.logger.info(f"   Input: {self.current_model.get_inputs()[0].name}")
+            self.logger.info(f"   Output: {self.current_model.get_outputs()[0].name}")
+
     async def load_model(self, model_type: RecognitionModel) -> bool:
         """Load face recognition model with GPU optimization"""
-        try:
-            # Check if model is already loaded
-            if self.current_model_type == model_type and self.current_model is not None:
-                return True
-
-            # Clean up previous model
-            if self.current_model is not None:
-                del self.current_model
-                self.current_model = None
-                if TORCH_AVAILABLE and torch and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-            # Get model configuration
-            model_config = self.model_configs.get(model_type)
-            if not model_config:
-                self.logger.error(f"❌ Unknown model type: {model_type}")
-                return False
-
-            # Type-safe access to model path
-            model_path = cast(str, model_config["model_path"])
-            if not os.path.exists(model_path):
-                self.logger.error(f"❌ Model file not found: {model_path}")
-                return False
-
-            self.logger.info(f"🔄 Loading {model_type.value} model from: {model_path}")
-
-            # Configure ONNX session options
-            if not ort:
-                self.logger.error("❌ ONNX Runtime not available")
-                return False
-
-            session_options = ort.SessionOptions()
-            session_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+        if (
+            self.current_model_type == model_type
+            and self.current_model is not None
+        ):
+            self.logger.debug(
+                f"Model {model_type.value} already loaded and matches requested type."
             )
-            session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            return True
 
-            # Configure providers
-            providers: List[Union[str, tuple]] = []
-            device_used = "CPU"            if (
-                self.config.enable_gpu_optimization
-                and TORCH_AVAILABLE
-                and torch
-                and torch.cuda.is_available()
-            ):
-                try:
-                    # GPU memory configuration
-                    gpu_mem_limit = int(2 * 1024 * 1024 * 1024)  # 2GB
+        self.logger.info(
+            f"Initiating load for model: {model_type.value}. "
+            f"Current loaded: "
+            f"{self.current_model_type.value if self.current_model_type else 'None'}"
+        )
+        self._cleanup_previous_model()  # Resets self.current_model & type
 
-                    cuda_options = {
-                        "device_id": 0,
-                        "arena_extend_strategy": "kSameAsRequested",
-                        "gpu_mem_limit": gpu_mem_limit,
-                        "cudnn_conv_algo_search": "HEURISTIC",
-                    }
+        model_config = self._validate_model_config(model_type)
+        if not model_config:
+            # _validate_model_config logs the error
+            return False
+        model_path = cast(str, model_config["model_path"])
 
-                    providers.append(("CUDAExecutionProvider", cuda_options))
-                    device_used = "GPU"
-                    self.logger.info(
-                        f"🔥 Configured {model_type.value} for GPU with "
-                        f"{gpu_mem_limit / 1024 / 1024:.0f}MB limit"
-                    )
+        session_options = self._configure_session_options()
+        if not session_options:
+            # _configure_session_options logs the error
+            return False
 
-                except Exception as cuda_error:
-                    self.logger.warning(f"⚠️ CUDA setup failed: {cuda_error}")
+        providers = self._configure_providers(model_type)
 
-            providers.append("CPUExecutionProvider")
-
-            # Create inference session
-            self.current_model = ort.InferenceSession(
+        try:
+            self.logger.info(
+                f"🔄 Creating ONNX inference session for {model_type.value} "
+                f"from: {model_path} with providers: {providers}"
+            )
+            # Create and assign the new model session
+            new_session = ort.InferenceSession(
                 model_path, providers=providers, sess_options=session_options
             )
 
+            # If successful, update current model and type
+            self.current_model = new_session
             self.current_model_type = model_type
 
-            # Log success
-            if self.current_model:
-                actual_providers = self.current_model.get_providers()
-                if "CUDAExecutionProvider" in actual_providers:
-                    device_used = "GPU"
-                else:
-                    device_used = "CPU"
+            self._log_model_success(model_type)
 
-                self.logger.info(
-                    f"✅ {model_type.value} loaded successfully on {device_used}"
-                )
-                self.logger.info(f"   Input: {self.current_model.get_inputs()[0].name}")
-                self.logger.info(
-                    f"   Output: {self.current_model.get_outputs()[0].name}"
-                )
-
-            # Update VRAM allocation if needed
             if self.vram_manager:
+                self.logger.info(f"Requesting VRAM allocation for {model_type.value}")
                 await self.vram_manager.request_model_allocation(
                     f"{model_type.value}-face-recognition",
-                    "high",
+                    "high",  # Consider making priority dynamic or configurable
                     "face_recognition_service",
                 )
 
+            self.logger.info(
+                f"✅ Successfully loaded and configured model: {model_type.value}"
+            )
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to load {model_type.value}: {e}")
+            self.logger.error(
+                f"❌ Failed to load model {model_type.value}: {e}", exc_info=True
+            )
+            # Ensure a clean state if any part of loading failed after cleanup
+            self._cleanup_previous_model()
             return False
 
     async def _warmup_model(self) -> None:
@@ -316,7 +409,6 @@ class FaceRecognitionService:
             face_normalized = np.transpose(face_normalized, (2, 0, 1))
             face_normalized = np.expand_dims(face_normalized, axis=0)
 
-            # แก้ไขปัญหา: ให้ return เป็น np.ndarray แทนที่จะเป็น Any
             return np.asarray(face_normalized, dtype=np.float32)
 
         except Exception as e:
@@ -345,6 +437,83 @@ class FaceRecognitionService:
         except Exception:
             return 50.0
 
+    async def _switch_model_if_needed(self, model_name: Optional[str]) -> None:
+        """Switch model if a different one is requested"""
+        if model_name and model_name != self.current_model_type.value:
+            try:
+                target_model = RecognitionModel(model_name.lower())
+                await self.load_model(target_model)
+            except ValueError:
+                self.logger.warning(
+                    f"⚠️ Unknown model: {model_name}, using current model"
+                )
+
+    def _run_model_inference(self, input_tensor: np.ndarray) -> Optional[np.ndarray]:
+        """Run model inference and return embedding vector"""
+        try:
+            if self.current_model is None:
+                self.logger.error("❌ Model is not loaded")
+                return None
+
+            input_name = self.current_model.get_inputs()[0].name
+            outputs = self.current_model.run(None, {input_name: input_tensor})
+
+            if not outputs or len(outputs) == 0:
+                self.logger.error("❌ No outputs from model")
+                return None
+
+            # Extract and normalize embedding
+            embedding_vector = outputs[0]
+            if len(embedding_vector.shape) > 1:
+                embedding_vector = embedding_vector[0]
+
+            norm = np.linalg.norm(embedding_vector)
+            if norm > 1e-8:
+                embedding_vector = embedding_vector / norm
+            else:
+                self.logger.warning("⚠️ Very small embedding norm")
+
+            return embedding_vector
+
+        except Exception as inference_error:
+            self.logger.error(f"❌ Inference failed: {inference_error}")
+            return None
+
+    def _create_embedding_object(
+        self, embedding_vector: np.ndarray, processing_time: float
+    ) -> FaceEmbedding:
+        """Create FaceEmbedding object with all metadata"""
+        quality_score = self._calculate_embedding_quality(embedding_vector)
+
+        embedding = FaceEmbedding(
+            vector=embedding_vector.astype(np.float32),
+            model_type=self.current_model_type,
+            quality_score=quality_score,
+            extraction_time=processing_time,
+            confidence=quality_score / 100.0,
+            dimension=len(embedding_vector),
+            normalized=True,
+            extraction_method="onnx_inference",
+        )
+
+        return embedding
+
+    def _update_extraction_stats(
+        self, embedding: FaceEmbedding, processing_time: float
+    ) -> None:
+        """Update performance statistics after extraction"""
+        self.stats.update_extraction_stats(
+            processing_time, success=True, quality=embedding.face_quality
+        )
+
+        if self.current_model:
+            device_used = (
+                "cuda"
+                if "CUDAExecutionProvider" in self.current_model.get_providers()
+                else "cpu"
+            )
+            self.stats.update_device_usage(processing_time, device_used)
+
     async def extract_embedding(
         self, face_image: np.ndarray, model_name: Optional[str] = None
     ) -> Optional[FaceEmbedding]:
@@ -353,87 +522,49 @@ class FaceRecognitionService:
 
         try:
             # Switch model if requested
-            if model_name and model_name != self.current_model_type.value:
-                try:
-                    target_model = RecognitionModel(model_name.lower())
-                    await self.load_model(target_model)
-                except ValueError:
-                    self.logger.warning(
-                        f"⚠️ Unknown model: {model_name}, using current model"
-                    )
+            await self._switch_model_if_needed(model_name)
 
             # Ensure model is loaded
             if self.current_model is None:
-                if not await self.initialize():
+                self.logger.info("Model not loaded, attempting initialization.")
+                if not await self.initialize(): # This also loads the default model
+                    self.logger.error("Failed to initialize service or load model.")
                     return None
+
+            if self.current_model is None: # Double check after initialize
+                self.logger.error("Model is still None after initialization attempt.")
+                return None
+
 
             # Preprocess image
             input_tensor = self._preprocess_image(face_image)
             if input_tensor is None:
-                self.logger.error("❌ Image preprocessing failed")
+                # _preprocess_image logs the error
+                self.stats.update_extraction_stats(
+                    time.time() - start_time, success=False
+                )
                 return None
 
             # Run inference
-            try:
-                if self.current_model is None:
-                    self.logger.error("❌ Model is not loaded")
-                    return None
-
-                input_name = self.current_model.get_inputs()[0].name
-                outputs = self.current_model.run(None, {input_name: input_tensor})
-
-                if not outputs or len(outputs) == 0:
-                    self.logger.error("❌ No outputs from model")
-                    return None
-
-                # Extract embedding
-                embedding_vector = outputs[0]
-                if len(embedding_vector.shape) > 1:
-                    embedding_vector = embedding_vector[0]
-
-                # Normalize embedding
-                norm = np.linalg.norm(embedding_vector)
-                if norm > 1e-8:
-                    embedding_vector = embedding_vector / norm
-                else:
-                    self.logger.warning("⚠️ Very small embedding norm")
-
-            except Exception as inference_error:
-                self.logger.error(f"❌ Inference failed: {inference_error}")
+            embedding_vector = self._run_model_inference(input_tensor)
+            if embedding_vector is None:
+                # _run_model_inference logs the error
+                self.stats.update_extraction_stats(
+                    time.time() - start_time, success=False
+                )
                 return None
 
-            # Calculate quality
-            quality_score = self._calculate_embedding_quality(embedding_vector)
-            processing_time = time.time() - start_time
-
             # Create embedding object
-            embedding = FaceEmbedding(
-                vector=embedding_vector.astype(np.float32),
-                model_type=self.current_model_type,
-                quality_score=quality_score,
-                extraction_time=processing_time,
-                confidence=quality_score / 100.0,
-                dimension=len(embedding_vector),
-                normalized=True,
-                extraction_method="onnx_inference",
-            )
+            processing_time = time.time() - start_time
+            embedding = self._create_embedding_object(embedding_vector, processing_time)
 
             # Update statistics
-            self.stats.update_extraction_stats(
-                processing_time, success=True, quality=embedding.face_quality
-            )
-
-            if self.current_model:
-                device_used = (
-                    "cuda"
-                    if "CUDAExecutionProvider" in self.current_model.get_providers()
-                    else "cpu"
-                )
-                self.stats.update_device_usage(processing_time, device_used)
+            self._update_extraction_stats(embedding, processing_time)
 
             self.logger.debug(
                 f"✅ Embedding extracted: {embedding_vector.shape}, "
-                f"quality={quality_score:.1f}, time={processing_time * 1000:.1f}ms"
+                f"quality={embedding.quality_score:.1f}, "
+                f"time={processing_time * 1000:.1f}ms"
             )
 
             return embedding
@@ -441,10 +572,10 @@ class FaceRecognitionService:
         except Exception as e:
             processing_time = time.time() - start_time
             self.stats.update_extraction_stats(processing_time, success=False)
-            self.logger.error(f"❌ Embedding extraction failed: {e}")
+            self.logger.error(
+                f"❌ Embedding extraction failed: {e}", exc_info=True
+            )
             return None
-
-    # [ส่วนที่เหลือของโค้ดยังคงเหมือนเดิม...]
 
     def compare_faces(
         self,
@@ -514,6 +645,68 @@ class FaceRecognitionService:
                 error=str(e),
             )
 
+    def _search_gallery(
+        self, query_embedding: FaceEmbedding, gallery: FaceGallery
+    ) -> List[FaceMatch]:
+        """Search for matches in the gallery"""
+        matches: List[FaceMatch] = []
+
+        for person_id, person_data in gallery.items():
+            max_similarity = 0.0
+            person_embeddings = person_data.get("embeddings", [])
+
+            for stored_embedding in person_embeddings:
+                if isinstance(stored_embedding, np.ndarray):
+                    comparison = self.compare_faces(
+                        query_embedding.vector,
+                        stored_embedding,
+                        self.current_model_type.value,
+                    )
+
+                    if comparison.similarity > max_similarity:
+                        max_similarity = comparison.similarity
+
+            # Create match if above threshold
+            if max_similarity > 0:
+                match = FaceMatch(
+                    person_id=person_id,
+                    confidence=max_similarity,
+                    similarity_score=max_similarity,
+                    distance=1.0 - max_similarity,
+                    comparison_method="cosine_similarity",
+                )
+                matches.append(match)
+
+        return matches
+
+    def _process_matches(self, matches: List[FaceMatch], top_k: int) -> List[FaceMatch]:
+        """Sort, rank and limit matches"""
+        # Sort matches by confidence
+        matches.sort(key=lambda x: x.confidence, reverse=True)
+
+        # Take top K matches
+        if len(matches) > top_k:
+            matches = matches[:top_k]
+
+        # Add rank information
+        for i, match in enumerate(matches):
+            match.rank = i + 1
+
+        return matches
+
+    def _determine_best_match(
+        self, matches: List[FaceMatch]
+    ) -> Tuple[Optional[FaceMatch], float]:
+        """Determine the best match and confidence"""
+        best_match = None
+        final_confidence = 0.0
+
+        if matches and matches[0].confidence >= self.config.similarity_threshold:
+            best_match = matches[0]
+            final_confidence = matches[0].confidence
+
+        return best_match, final_confidence
+
     async def recognize_face(
         self,
         face_image: np.ndarray,
@@ -544,57 +737,12 @@ class FaceRecognitionService:
 
             # Search in gallery
             search_start = time.time()
-            matches: List[FaceMatch] = []
-
-            for person_id, person_data in gallery.items():
-                max_similarity = 0.0
-
-                # Get embeddings for this person
-                person_embeddings = person_data.get("embeddings", [])
-
-                for stored_embedding in person_embeddings:
-                    if isinstance(stored_embedding, np.ndarray):
-                        # Compare embeddings
-                        comparison = self.compare_faces(
-                            query_embedding.vector,
-                            stored_embedding,
-                            self.current_model_type.value,
-                        )
-
-                        if comparison.similarity > max_similarity:
-                            max_similarity = comparison.similarity
-
-                # Create match if above threshold
-                if max_similarity > 0:
-                    match = FaceMatch(
-                        person_id=person_id,
-                        confidence=max_similarity,
-                        similarity_score=max_similarity,
-                        distance=1.0 - max_similarity,
-                        comparison_method="cosine_similarity",
-                    )
-                    matches.append(match)
-
+            matches = self._search_gallery(query_embedding, gallery)
             search_time = time.time() - search_start
 
-            # Sort matches by confidence
-            matches.sort(key=lambda x: x.confidence, reverse=True)
-
-            # Take top K matches
-            if len(matches) > top_k:
-                matches = matches[:top_k]
-
-            # Add rank information
-            for i, match in enumerate(matches):
-                match.rank = i + 1
-
-            # Determine best match
-            best_match = None
-            final_confidence = 0.0
-
-            if matches and matches[0].confidence >= self.config.similarity_threshold:
-                best_match = matches[0]
-                final_confidence = matches[0].confidence
+            # Process matches
+            matches = self._process_matches(matches, top_k)
+            best_match, final_confidence = self._determine_best_match(matches)
 
             total_time = time.time() - start_time
 
@@ -674,7 +822,7 @@ class FaceRecognitionService:
             self.logger.error(f"❌ Unknown model: {model_name}")
             return False
 
-    async def cleanup(self) -> None:  # เพิ่ม return type annotation
+    async def cleanup(self) -> None:
         """Clean up resources"""
         try:
             if self.current_model is not None:
