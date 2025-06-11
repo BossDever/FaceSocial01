@@ -19,15 +19,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
 # Add project root to Python path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import core components
 from src.core.config import get_settings
 from src.core.vram_manager import VRAMManager
-from src.services.face_detection_service import FaceDetectionService
-from src.services.face_recognition_service import FaceRecognitionService
-from src.services.face_analysis_service import FaceAnalysisService
+
+# Import AI services
+from src.ai_services.face_detection.face_detection_service import FaceDetectionService
+from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService
+from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService
 
 # Import API routes
 from src.api.face_detection import router as face_detection_router
@@ -62,7 +64,7 @@ async def lifespan(app: FastAPI):
         settings = get_settings()
         
         # Create necessary directories
-        for directory in ["logs", "output", "output/detection", "output/recognition"]:
+        for directory in ["logs", "output", "output/detection", "output/recognition", "output/analysis"]:
             os.makedirs(directory, exist_ok=True)
         
         # Initialize VRAM Manager
@@ -96,8 +98,7 @@ async def lifespan(app: FastAPI):
         # Initialize Face Analysis Service (Integration)
         if "face_detection" in services and "face_recognition" in services:
             face_analysis_service = FaceAnalysisService(
-                detection_service=services["face_detection"],
-                recognition_service=services["face_recognition"],
+                vram_manager=vram_manager,
                 config=settings.analysis_config
             )
             
@@ -205,7 +206,7 @@ async def system_info():
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "src.main:app",
         host="0.0.0.0",
         port=8080,
         reload=True,
