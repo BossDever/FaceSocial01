@@ -289,6 +289,22 @@ class FaceRecognitionService:
             )
             return None
 
+    async def _ensure_model_ready(self) -> bool:
+        """Ensure model is loaded and ready for inference"""
+        if self.current_model is None or self.current_model_type is None:
+            self.logger.error("❌ No model loaded")
+            return False
+
+        # Optional: Check if model is still valid
+        try:
+            # Test if model session is still valid
+            if hasattr(self.current_model, 'get_inputs'):
+                _ = self.current_model.get_inputs()
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Model validation failed: {e}")
+            return False
+
     async def load_model(self, model_type: RecognitionModel) -> bool:
         """Load face recognition model with GPU optimization"""
         if (

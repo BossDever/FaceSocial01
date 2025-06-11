@@ -12,6 +12,24 @@ from dataclasses import dataclass, field
 class Settings:
     """Application settings and configuration"""
 
+    # Project Information
+    project_name: str = "Face Recognition System"
+    version: str = "2.0.0"
+    # Professional Face Detection, Recognition & Analysis System
+    # with GPU optimization
+    description: str = (
+        "Professional Face Detection, Recognition & Analysis System "
+        "with GPU optimization"
+    )
+
+    # API Configuration
+    host: str = "0.0.0.0"
+    port: int = 8080
+    debug: bool = True
+    reload: bool = True
+    log_level: str = "info"
+    cors_origins: list = field(default_factory=lambda: ["*"])
+
     # VRAM Manager Configuration
     vram_config: Dict[str, Any] = field(default_factory=lambda: {
         "reserved_vram_mb": 512,
@@ -114,15 +132,10 @@ class Settings:
         "default_gallery_top_k": 5,
     })
 
-    # API Configuration
+    # API Configuration Details
     api_config: Dict[str, Any] = field(default_factory=lambda: {
-        "host": "0.0.0.0",
-        "port": 8080,
-        "reload": True,
-        "log_level": "info",
         "max_upload_size": 10 * 1024 * 1024,  # 10MB
         "allowed_image_types": ["image/jpeg", "image/png", "image/jpg"],
-        "cors_origins": ["*"],
         "docs_url": "/docs",
         "redoc_url": "/redoc",
     })
@@ -141,46 +154,33 @@ class Settings:
 
 def get_settings() -> Settings:
     """
-    Get application settings
-
-    This function loads settings from environment variables or uses defaults.
-    Override specific settings via environment variables:
-
-    - FACE_RECOGNITION_HOST: API host (default: 0.0.0.0)
-    - FACE_RECOGNITION_PORT: API port (default: 8080)
-    - FACE_RECOGNITION_LOG_LEVEL: Logging level (default: INFO)
-    - FACE_RECOGNITION_GPU_ENABLED: Enable GPU optimization (default: True)
+    Get application settings with environment variable overrides
     """
     settings = Settings()
 
     # Override from environment variables
-    host_env = os.getenv("FACE_RECOGNITION_HOST")
-    if host_env:
-        settings.api_config["host"] = host_env
+    if host_env := os.getenv("FACE_RECOGNITION_HOST"):
+        settings.host = host_env
 
-    port_env = os.getenv("FACE_RECOGNITION_PORT")
-    if port_env:
+    if port_env := os.getenv("FACE_RECOGNITION_PORT"):
         try:
-            settings.api_config["port"] = int(port_env)
+            settings.port = int(port_env)
         except ValueError:
             pass
 
-    log_level_env = os.getenv("FACE_RECOGNITION_LOG_LEVEL")
-    if log_level_env:
+    if log_level_env := os.getenv("FACE_RECOGNITION_LOG_LEVEL"):
         log_level = log_level_env.upper()
         if log_level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            settings.logging_config["level"] = log_level
+            settings.log_level = log_level.lower()
 
-    gpu_env = os.getenv("FACE_RECOGNITION_GPU_ENABLED")
-    if gpu_env:
+    if gpu_env := os.getenv("FACE_RECOGNITION_GPU_ENABLED"):
         gpu_enabled = gpu_env.lower()
         if gpu_enabled in ["true", "1", "yes"]:
             settings.recognition_config["enable_gpu_optimization"] = True
         elif gpu_enabled in ["false", "0", "no"]:
             settings.recognition_config["enable_gpu_optimization"] = False
 
-    model_dir_env = os.getenv("FACE_RECOGNITION_MODEL_DIR")
-    if model_dir_env:
+    if model_dir_env := os.getenv("FACE_RECOGNITION_MODEL_DIR"):
         # Update model paths
         settings.detection_config.update({
             "yolov9c_model_path": os.path.join(
@@ -244,10 +244,9 @@ def create_required_directories() -> None:
 def get_development_settings() -> Settings:
     """Get settings optimized for development"""
     settings = get_settings()
-    settings.api_config.update({
-        "reload": True,
-        "log_level": "debug",
-    })
+    settings.debug = True
+    settings.reload = True
+    settings.log_level = "debug"
     settings.logging_config["level"] = "DEBUG"
     return settings
 
@@ -255,10 +254,9 @@ def get_development_settings() -> Settings:
 def get_production_settings() -> Settings:
     """Get settings optimized for production"""
     settings = get_settings()
-    settings.api_config.update({
-        "reload": False,
-        "log_level": "info",
-    })
+    settings.debug = False
+    settings.reload = False
+    settings.log_level = "info"
     settings.logging_config["level"] = "INFO"
     return settings
 
@@ -266,10 +264,8 @@ def get_production_settings() -> Settings:
 def get_testing_settings() -> Settings:
     """Get settings optimized for testing"""
     settings = get_settings()
-    settings.api_config.update({
-        "port": 8081,  # Different port for testing
-        "log_level": "warning",
-    })
+    settings.port = 8081  # Different port for testing
+    settings.log_level = "warning"
     settings.logging_config["level"] = "WARNING"
     # Disable GPU for testing to avoid conflicts
     settings.recognition_config["enable_gpu_optimization"] = False
