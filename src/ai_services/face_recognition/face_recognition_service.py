@@ -261,6 +261,34 @@ class FaceRecognitionService:
             self.logger.info(f"   Input: {self.current_model.get_inputs()[0].name}")
             self.logger.info(f"   Output: {self.current_model.get_outputs()[0].name}")
 
+    def _create_onnx_session(
+        self,
+        model_path: str,
+        providers: List[Union[str, Tuple[str, Dict[str, Any]]]],
+        session_options: Any,  # ort.SessionOptions
+    ) -> Optional[Any]:  # ort.InferenceSession
+        """Creates an ONNX inference session."""
+        try:
+            self.logger.info(
+                f"🔄 Creating ONNX inference session for model from: {model_path} "
+                f"with providers: {providers}"
+            )
+            # Ensure ort is available before using it
+            if not ort:
+                self.logger.error(
+                    "❌ ONNX Runtime is not available for session creation."
+                )
+                return None
+            return ort.InferenceSession(
+                model_path, providers=providers, sess_options=session_options
+            )
+        except Exception as e:
+            self.logger.error(
+                f"❌ Failed to create ONNX session from {model_path}: {e}",
+                exc_info=True,
+            )
+            return None
+
     async def load_model(self, model_type: RecognitionModel) -> bool:
         """Load face recognition model with GPU optimization"""
         if (
@@ -281,53 +309,44 @@ class FaceRecognitionService:
 
         model_config = self._validate_model_config(model_type)
         if not model_config:
-            # _validate_model_config logs the error
-            return False
+            return False  # Error logged in _validate_model_config
         model_path = cast(str, model_config["model_path"])
 
         session_options = self._configure_session_options()
         if not session_options:
-            # _configure_session_options logs the error
-            return False
+            return False  # Error logged in _configure_session_options
 
         providers = self._configure_providers(model_type)
 
-        try:
-            self.logger.info(
-                f"🔄 Creating ONNX inference session for {model_type.value} "
-                f"from: {model_path} with providers: {providers}"
-            )
-            # Create and assign the new model session
-            new_session = ort.InferenceSession(
-                model_path, providers=providers, sess_options=session_options
-            )
+        new_session = self._create_onnx_session(model_path, providers, session_options)
 
-            # If successful, update current model and type
-            self.current_model = new_session
-            self.current_model_type = model_type
-
-            self._log_model_success(model_type)
-
-            if self.vram_manager:
-                self.logger.info(f"Requesting VRAM allocation for {model_type.value}")
-                await self.vram_manager.request_model_allocation(
-                    f"{model_type.value}-face-recognition",
-                    "high",  # Consider making priority dynamic or configurable
-                    "face_recognition_service",
-                )
-
-            self.logger.info(
-                f"✅ Successfully loaded and configured model: {model_type.value}"
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ Failed to load model {model_type.value}: {e}", exc_info=True
-            )
-            # Ensure a clean state if any part of loading failed after cleanup
+        if not new_session:
+            # Ensure clean state if session creation failed
             self._cleanup_previous_model()
             return False
+
+        self.current_model = new_session
+        self.current_model_type = model_type
+        self._log_model_success(model_type)
+
+        if self.vram_manager:
+            self.logger.info(f"Requesting VRAM allocation for {model_type.value}")
+            try:
+                await self.vram_manager.request_model_allocation(
+                    f"{model_type.value}-face-recognition",
+                    "high",
+                    "face_recognition_service",
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ VRAM allocation request failed for {model_type.value}: {e}"
+                )
+                # Depending on policy, this might not be a critical failure
+
+        self.logger.info(
+            f"✅ Successfully loaded and configured model: {model_type.value}"
+        )
+        return True
 
     async def _warmup_model(self) -> None:
         """Warm up model for optimal performance"""
@@ -517,48 +536,40 @@ class FaceRecognitionService:
     async def extract_embedding(
         self, face_image: np.ndarray, model_name: Optional[str] = None
     ) -> Optional[FaceEmbedding]:
-        """Extract face embedding with enhanced error handling"""
+        """Extract face embedding with enhanced error handling and structure"""
         start_time = time.time()
 
+        await self._switch_model_if_needed(model_name)
+
+        if not await self._ensure_model_ready():
+            self.stats.update_extraction_stats(
+                time.time() - start_time, success=False
+            )
+            # Errors logged by _ensure_model_ready or its callees
+            return None
+
+        input_tensor = self._preprocess_image(face_image)
+        if input_tensor is None:
+            self.stats.update_extraction_stats(
+                time.time() - start_time, success=False
+            )
+            # _preprocess_image logs its own error
+            return None
+
+        embedding_vector = self._run_model_inference(input_tensor)
+        if embedding_vector is None:
+            self.stats.update_extraction_stats(
+                time.time() - start_time, success=False
+            )
+            # _run_model_inference logs its own error
+            return None
+
+        # Final steps: object creation and stats update
         try:
-            # Switch model if requested
-            await self._switch_model_if_needed(model_name)
-
-            # Ensure model is loaded
-            if self.current_model is None:
-                self.logger.info("Model not loaded, attempting initialization.")
-                if not await self.initialize(): # This also loads the default model
-                    self.logger.error("Failed to initialize service or load model.")
-                    return None
-
-            if self.current_model is None: # Double check after initialize
-                self.logger.error("Model is still None after initialization attempt.")
-                return None
-
-
-            # Preprocess image
-            input_tensor = self._preprocess_image(face_image)
-            if input_tensor is None:
-                # _preprocess_image logs the error
-                self.stats.update_extraction_stats(
-                    time.time() - start_time, success=False
-                )
-                return None
-
-            # Run inference
-            embedding_vector = self._run_model_inference(input_tensor)
-            if embedding_vector is None:
-                # _run_model_inference logs the error
-                self.stats.update_extraction_stats(
-                    time.time() - start_time, success=False
-                )
-                return None
-
-            # Create embedding object
             processing_time = time.time() - start_time
-            embedding = self._create_embedding_object(embedding_vector, processing_time)
-
-            # Update statistics
+            embedding = self._create_embedding_object(
+                embedding_vector, processing_time
+            )
             self._update_extraction_stats(embedding, processing_time)
 
             self.logger.debug(
@@ -566,14 +577,14 @@ class FaceRecognitionService:
                 f"quality={embedding.quality_score:.1f}, "
                 f"time={processing_time * 1000:.1f}ms"
             )
-
             return embedding
-
         except Exception as e:
-            processing_time = time.time() - start_time
-            self.stats.update_extraction_stats(processing_time, success=False)
+            # Catch errors from the final creation/stats steps
+            self.stats.update_extraction_stats(
+                time.time() - start_time, success=False
+            )
             self.logger.error(
-                f"❌ Embedding extraction failed: {e}", exc_info=True
+                f"❌ Embedding finalization failed: {e}", exc_info=True
             )
             return None
 
@@ -714,59 +725,71 @@ class FaceRecognitionService:
         model_name: Optional[str] = None,
         top_k: int = 5,
     ) -> FaceRecognitionResult:
-        """Recognize face against gallery"""
+        """Recognize face against gallery with refactored structure"""
         start_time = time.time()
+        # Cache model type in case of errors before it's updated by extract_embedding
+        cached_model_type = self.current_model_type
 
+        embedding_start_time = time.time()
+        query_embedding = await self.extract_embedding(face_image, model_name)
+        embedding_time = time.time() - embedding_start_time
+
+        if query_embedding is None or query_embedding.vector is None:
+            self.logger.warning(
+                "Query embedding extraction failed during recognize_face."
+            )
+            return FaceRecognitionResult(
+                matches=[],
+                best_match=None,
+                confidence=0.0,
+                processing_time=time.time() - start_time,
+                model_used=cached_model_type,  # Use cached model type
+                error="Failed to extract query embedding for recognition",
+                query_embedding=query_embedding, # Pass along for debugging
+                embedding_time=embedding_time,
+            )
+
+        # Proceed with gallery search and matching if embedding is successful
         try:
-            # Extract query embedding
-            embedding_start = time.time()
-            query_embedding = await self.extract_embedding(face_image, model_name)
-            embedding_time = time.time() - embedding_start
-
-            if query_embedding is None or query_embedding.vector is None:
-                return FaceRecognitionResult(
-                    matches=[],
-                    best_match=None,
-                    confidence=0.0,
-                    processing_time=time.time() - start_time,
-                    model_used=self.current_model_type,
-                    error="Failed to extract query embedding",
-                    query_embedding=query_embedding,
-                    embedding_time=embedding_time,
-                )
-
-            # Search in gallery
-            search_start = time.time()
+            search_start_time = time.time()
+            # query_embedding and query_embedding.vector are confirmed not None here
             matches = self._search_gallery(query_embedding, gallery)
-            search_time = time.time() - search_start
+            search_time = time.time() - search_start_time
 
-            # Process matches
-            matches = self._process_matches(matches, top_k)
-            best_match, final_confidence = self._determine_best_match(matches)
+            processed_matches = self._process_matches(matches, top_k)
+            best_match, final_confidence = self._determine_best_match(
+                processed_matches
+            )
 
-            total_time = time.time() - start_time
+            total_processing_time = time.time() - start_time
 
             return FaceRecognitionResult(
-                matches=matches,
+                matches=processed_matches,
                 best_match=best_match,
                 confidence=final_confidence,
-                processing_time=total_time,
+                processing_time=total_processing_time,
+                # Reflects model used by extract_embedding
                 model_used=self.current_model_type,
                 query_embedding=query_embedding,
                 total_candidates=len(gallery),
                 search_time=search_time,
                 embedding_time=embedding_time,
             )
-
         except Exception as e:
-            self.logger.error(f"❌ Face recognition failed: {e}")
+            self.logger.error(
+                f"❌ Face recognition (gallery search/match) failed: {e}",
+                exc_info=True,
+            )
             return FaceRecognitionResult(
                 matches=[],
                 best_match=None,
                 confidence=0.0,
                 processing_time=time.time() - start_time,
+                # Or cached_model_type if preferred
                 model_used=self.current_model_type,
-                error=str(e),
+                error=f"Error during gallery search or match processing: {str(e)}",
+                query_embedding=query_embedding, # Include successful embedding
+                embedding_time=embedding_time,
             )
 
     async def add_face_to_database(

@@ -1,1 +1,1 @@
-"""API package"""
+"""API package for Face Recognition System"""

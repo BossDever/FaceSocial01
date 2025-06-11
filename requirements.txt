@@ -1,9 +1,9 @@
 # Face Recognition System Requirements
-# For SuwitBoss/wofk - Clean Version
+# For SuwitBoss/wofk - Complete Version
 
 # Core Framework
 fastapi==0.115.12
-uvicorn==0.34.3
+uvicorn[standard]==0.34.3
 python-multipart==0.0.20
 pydantic==2.11.5
 
@@ -28,14 +28,16 @@ ultralytics==8.3.152
 albumentations==2.0.8
 imageio==2.37.0
 
-# Face Recognition
+# Face Recognition Libraries
 insightface==0.7.3
 facexlib==0.3.0
 
-# Utilities
-requests==2.32.3
+# Web & API
 aiofiles==0.8.0
 python-dotenv==1.0.0
+requests==2.32.3
+
+# Utilities
 coloredlogs==15.0.1
 tqdm==4.67.1
 
@@ -43,13 +45,18 @@ tqdm==4.67.1
 pandas==2.3.0
 scipy==1.15.3
 
-# Development Tools
+# Development Tools (Optional)
 pytest==8.0.0
 black==24.0.0
 isort==5.13.0
 mypy==1.8.0
 
-# Optional: Analysis & Visualization
+# Analysis & Visualization (Optional)
 jupyter==1.1.1
 matplotlib==3.10.3
 seaborn==0.13.2
+
+# Additional dependencies for complete functionality
+httpx==0.24.1
+starlette==0.41.3
+anyio==4.4.0

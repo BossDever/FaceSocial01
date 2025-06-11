@@ -1,5 +1,6 @@
 """
 Complete API Endpoints for Face Analysis System
+This file contains all the API endpoints that main.py imports
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
@@ -9,11 +10,9 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 import base64
+import json
 
-# === FACE DETECTION API ===
-face_detection_router = APIRouter()
-face_detection_service = None  # Will be injected by main.py
-
+# === SHARED MODELS ===
 class DetectionRequest(BaseModel):
     image_base64: str
     model_name: Optional[str] = "auto"
@@ -22,20 +21,45 @@ class DetectionRequest(BaseModel):
     max_faces: Optional[int] = 50
     min_quality_threshold: Optional[float] = 40.0
 
+class RecognitionRequest(BaseModel):
+    face_image_base64: str
+    gallery: dict  # {"person_id": {"name": "...", "embeddings": [...]}}
+    model_name: Optional[str] = "facenet"
+    top_k: Optional[int] = 5
+
+class AddFaceRequest(BaseModel):
+    person_id: str
+    face_image_base64: str
+    metadata: Optional[dict] = None
+
+class AnalysisRequest(BaseModel):
+    image_base64: str
+    # "detection_only", "recognition_only", "full_analysis", "comprehensive"
+    mode: str = "full_analysis"
+    gallery: Optional[dict] = None
+    config: Optional[dict] = None
+
+# === FACE DETECTION API ===
+face_detection_router = APIRouter()
+face_detection_service = None  # Will be injected by main.py
+
 @face_detection_router.get("/face-detection/health")
 async def face_detection_health():
     """Health check for face detection service"""
     if face_detection_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face detection service not available"
-        )
+        detail = "Face detection service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
-    service_info = await face_detection_service.get_service_info()
-    return {
-        "status": "healthy",
-        "service": "face_detection",
-        "service_info": service_info
-    }
+    try:
+        service_info = await face_detection_service.get_service_info()
+        return {
+            "status": "healthy",
+            "service": "face_detection",
+            "service_info": service_info
+        }
+    except Exception as e:
+        detail = f"Health check failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_detection_router.post("/face-detection/detect")
 async def detect_faces_endpoint(
@@ -48,9 +72,8 @@ async def detect_faces_endpoint(
 ):
     """Detect faces in uploaded image"""
     if face_detection_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face detection service not available"
-        )
+        detail = "Face detection service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Read image
@@ -74,15 +97,15 @@ async def detect_faces_endpoint(
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
+        detail = f"Detection failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_detection_router.post("/face-detection/detect-base64")
 async def detect_faces_base64(request: DetectionRequest):
     """Detect faces in base64 encoded image"""
     if face_detection_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face detection service not available"
-        )
+        detail = "Face detection service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Decode base64 image
@@ -106,37 +129,30 @@ async def detect_faces_base64(request: DetectionRequest):
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
+        detail = f"Detection failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 # === FACE RECOGNITION API ===
 face_recognition_router = APIRouter()
 face_recognition_service = None  # Will be injected by main.py
 
-class RecognitionRequest(BaseModel):
-    face_image_base64: str
-    gallery: dict  # {"person_id": {"name": "...", "embeddings": [...]}
-    model_name: Optional[str] = "facenet"
-    top_k: Optional[int] = 5
-
-class AddFaceRequest(BaseModel):
-    person_id: str
-    face_image_base64: str
-    metadata: Optional[dict] = None
-
 @face_recognition_router.get("/face-recognition/health")
 async def face_recognition_health():
     """Health check for face recognition service"""
     if face_recognition_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face recognition service not available"
-        )
+        detail = "Face recognition service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
-    stats = face_recognition_service.get_performance_stats()
-    return {
-        "status": "healthy",
-        "service": "face_recognition",
-        "performance_stats": stats.to_dict()
-    }
+    try:
+        stats = face_recognition_service.get_performance_stats()
+        return {
+            "status": "healthy",
+            "service": "face_recognition",
+            "performance_stats": stats.to_dict()
+        }
+    except Exception as e:
+        detail = f"Health check failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_recognition_router.post("/face-recognition/extract-embedding")
 async def extract_embedding_endpoint(
@@ -145,9 +161,8 @@ async def extract_embedding_endpoint(
 ):
     """Extract face embedding from uploaded image"""
     if face_recognition_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face recognition service not available"
-        )
+        detail = "Face recognition service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Read and process image
@@ -162,24 +177,20 @@ async def extract_embedding_endpoint(
         embedding = await face_recognition_service.extract_embedding(image, model_name)
 
         if embedding is None:
-            raise HTTPException(
-                status_code=400, detail="Failed to extract embedding"
-            )
+            raise HTTPException(status_code=400, detail="Failed to extract embedding")
 
         return JSONResponse(content=embedding.to_dict())
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Embedding extraction failed: {str(e)}"
-        )
+        detail = f"Embedding extraction failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_recognition_router.post("/face-recognition/recognize")
 async def recognize_face_endpoint(request: RecognitionRequest):
     """Recognize face against gallery"""
     if face_recognition_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face recognition service not available"
-        )
+        detail = "Face recognition service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Decode image
@@ -201,15 +212,15 @@ async def recognize_face_endpoint(request: RecognitionRequest):
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
+        detail = f"Recognition failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_recognition_router.post("/face-recognition/add-face")
 async def add_face_to_database(request: AddFaceRequest):
     """Add face to internal database"""
     if face_recognition_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face recognition service not available"
-        )
+        detail = "Face recognition service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Decode image
@@ -228,43 +239,39 @@ async def add_face_to_database(request: AddFaceRequest):
         )
 
         if not success:
-            raise HTTPException(
-                status_code=400, detail="Failed to add face to database"
-            )
+            detail = "Failed to add face to database"
+            raise HTTPException(status_code=400, detail=detail)
 
         return {"success": True, "message": f"Face added for {request.person_id}"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Add face failed: {str(e)}")
+        detail = f"Add face failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 # === FACE ANALYSIS API ===
 face_analysis_router = APIRouter()
 face_analysis_service = None  # Will be injected by main.py
 
-class AnalysisRequest(BaseModel):
-    image_base64: str
-    mode: str = "full_analysis"  # Options: "detection_only", "recognition_only",
-                                # "full_analysis", "comprehensive"
-    gallery: Optional[dict] = None
-    config: Optional[dict] = None
-
 @face_analysis_router.get("/face-analysis/health")
 async def face_analysis_health():
     """Health check for face analysis service"""
     if face_analysis_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face analysis service not available"
-        )
+        detail = "Face analysis service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
-    stats = face_analysis_service.get_performance_stats()
-    available_models = await face_analysis_service.get_available_models()
+    try:
+        stats = face_analysis_service.get_performance_stats()
+        available_models = await face_analysis_service.get_available_models()
 
-    return {
-        "status": "healthy",
-        "service": "face_analysis",
-        "performance_stats": stats,
-        "available_models": available_models
-    }
+        return {
+            "status": "healthy",
+            "service": "face_analysis",
+            "performance_stats": stats,
+            "available_models": available_models
+        }
+    except Exception as e:
+        detail = f"Health check failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_analysis_router.post("/face-analysis/analyze")
 async def analyze_faces_endpoint(
@@ -278,9 +285,8 @@ async def analyze_faces_endpoint(
 ):
     """Comprehensive face analysis"""
     if face_analysis_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face analysis service not available"
-        )
+        detail = "Face analysis service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Read image
@@ -294,12 +300,13 @@ async def analyze_faces_endpoint(
         # Parse gallery if provided
         gallery = None
         if gallery_json:
-            import json
             gallery = json.loads(gallery_json)
 
         # Create analysis config
         from src.ai_services.face_analysis.models import (
-            AnalysisConfig, AnalysisMode, QualityLevel
+            AnalysisConfig,
+            AnalysisMode,
+            QualityLevel
         )
 
         config = AnalysisConfig(
@@ -322,15 +329,15 @@ async def analyze_faces_endpoint(
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        detail = f"Analysis failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_analysis_router.post("/face-analysis/analyze-base64")
 async def analyze_faces_base64(request: AnalysisRequest):
     """Comprehensive face analysis with base64 image"""
     if face_analysis_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face analysis service not available"
-        )
+        detail = "Face analysis service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Decode image
@@ -343,7 +350,9 @@ async def analyze_faces_base64(request: AnalysisRequest):
 
         # Create analysis config
         from src.ai_services.face_analysis.models import (
-            AnalysisConfig, AnalysisMode, QualityLevel
+            AnalysisConfig,
+            AnalysisMode,
+            QualityLevel
         )
 
         config_dict = request.config or {}
@@ -367,7 +376,8 @@ async def analyze_faces_base64(request: AnalysisRequest):
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        detail = f"Analysis failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @face_analysis_router.post("/face-analysis/batch")
 async def batch_analyze_faces(
@@ -377,14 +387,13 @@ async def batch_analyze_faces(
 ):
     """Batch face analysis for multiple images"""
     if face_analysis_service is None:
-        raise HTTPException(
-            status_code=503, detail="Face analysis service not available"
-        )
+        detail = "Face analysis service not available"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         # Read all images
         images = []
-        for file_item in files: # Renamed 'file' to 'file_item' to avoid conflict
+        for file_item in files:  # Renamed to avoid File type hint conflict
             image_data = await file_item.read()
             image_array = np.frombuffer(image_data, np.uint8)
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
@@ -398,12 +407,13 @@ async def batch_analyze_faces(
         # Parse gallery if provided
         gallery = None
         if gallery_json:
-            import json
             gallery = json.loads(gallery_json)
 
         # Create analysis config
         from src.ai_services.face_analysis.models import (
-            AnalysisConfig, AnalysisMode, QualityLevel
+            AnalysisConfig,
+            AnalysisMode,
+            QualityLevel
         )
 
         config = AnalysisConfig(
@@ -423,7 +433,8 @@ async def batch_analyze_faces(
         return JSONResponse(content=result.to_dict())
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
+        detail = f"Batch analysis failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=detail)
 
 # Export routers
 __all__ = ["face_detection_router", "face_recognition_router", "face_analysis_router"]
