@@ -5,6 +5,7 @@ Face Recognition System - Main Application
 SuwitBoss/wofk - Clean & Organized Version
 """
 
+# Standard library imports
 import os
 import sys
 import logging
@@ -12,30 +13,26 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, AsyncGenerator
 
-# Add project root to Python path FIRST
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# Standard library and third-party imports
+# Third-party imports
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
-# Import core components - after sys.path modification
-from src.core.config import get_settings  # type: ignore
-from src.core.vram_manager import VRAMManager  # type: ignore
+# Add project root to Python path FIRST
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-# Import AI services
-from src.ai_services.face_detection.face_detection_service import FaceDetectionService  # type: ignore
-from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService  # type: ignore
-from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService  # type: ignore
-
-# Import API routes
-from src.api.face_detection import router as face_detection_router  # type: ignore
-from src.api.face_recognition import router as face_recognition_router  # type: ignore
-from src.api.face_analysis import router as face_analysis_router  # type: ignore
+# Local imports (after sys.path modification) - noqa: E402
+from src.core.config import get_settings  # noqa: E402
+from src.core.vram_manager import VRAMManager  # noqa: E402
+from src.ai_services.face_detection.face_detection_service import FaceDetectionService  # noqa: E402
+from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService  # noqa: E402
+from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService  # noqa: E402
+from src.api.face_detection import router as face_detection_router  # noqa: E402
+from src.api.face_recognition import router as face_recognition_router  # noqa: E402
+from src.api.face_analysis import router as face_analysis_router  # noqa: E402
 
 # Setup logging
 logging.basicConfig(
