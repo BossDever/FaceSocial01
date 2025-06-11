@@ -1,5 +1,5 @@
 # Face Recognition System Requirements
-# สำหรับ Windows + Python 3.11
+# For SuwitBoss/wofk - Clean Version
 
 # Core Framework
 fastapi==0.115.12
@@ -18,7 +18,7 @@ numpy==1.26.4
 scikit-image==0.25.2
 scikit-learn==1.7.0
 
-# ONNX Runtime (GPU)
+# ONNX Runtime (GPU Support)
 onnxruntime-gpu==1.22.0
 
 # YOLO Models
@@ -36,14 +36,12 @@ facexlib==0.3.0
 requests==2.32.3
 aiofiles==0.8.0
 python-dotenv==1.0.0
+coloredlogs==15.0.1
+tqdm==4.67.1
 
 # Data Processing
 pandas==2.3.0
 scipy==1.15.3
-
-# Logging & Monitoring
-coloredlogs==15.0.1
-tqdm==4.67.1
 
 # Development Tools
 pytest==8.0.0
@@ -51,7 +49,7 @@ black==24.0.0
 isort==5.13.0
 mypy==1.8.0
 
-# Optional: Jupyter for testing
+# Optional: Analysis & Visualization
 jupyter==1.1.1
 matplotlib==3.10.3
 seaborn==0.13.2
