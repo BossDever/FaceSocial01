@@ -1,0 +1,57 @@
+# Face Recognition System Requirements
+# สำหรับ Windows + Python 3.11
+
+# Core Framework
+fastapi==0.115.12
+uvicorn==0.34.3
+python-multipart==0.0.20
+
+# Machine Learning & Computer Vision
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+opencv-python==4.11.0.86
+opencv-contrib-python==4.11.0.86
+pillow==11.1.0
+numpy==1.26.4
+scikit-image==0.25.2
+scikit-learn==1.7.0
+
+# ONNX Runtime (GPU)
+onnxruntime-gpu==1.22.0
+
+# YOLO Models
+ultralytics==8.3.152
+
+# Image Processing
+albumentations==2.0.8
+imageio==2.37.0
+
+# Face Recognition Models
+insightface==0.7.3
+facexlib==0.3.0
+
+# Utilities
+pydantic==2.11.5
+requests==2.32.3
+aiofiles==0.8.0
+python-dotenv==1.0.0
+
+# Data Processing
+pandas==2.3.0
+scipy==1.15.3
+
+# Logging & Monitoring
+coloredlogs==15.0.1
+tqdm==4.67.1
+
+# Development Tools
+pytest==8.0.0
+black==24.0.0
+isort==5.13.0
+mypy==1.8.0
+
+# Optional: Jupyter for testing
+jupyter==1.1.1
+matplotlib==3.10.3
+seaborn==0.13.2

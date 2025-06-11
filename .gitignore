@@ -1,0 +1,41 @@
+# Model files - exclude all models
+model/
+*.pt
+*.onnx
+*.pth
+*.pkl
+*.h5
+*.pb
+*.tflite
+*.safetensors
+*.bin
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
