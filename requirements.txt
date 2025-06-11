@@ -5,6 +5,7 @@
 fastapi==0.115.12
 uvicorn==0.34.3
 python-multipart==0.0.20
+pydantic==2.11.5
 
 # Machine Learning & Computer Vision
 torch==2.5.1
@@ -27,12 +28,11 @@ ultralytics==8.3.152
 albumentations==2.0.8
 imageio==2.37.0
 
-# Face Recognition Models
+# Face Recognition
 insightface==0.7.3
 facexlib==0.3.0
 
 # Utilities
-pydantic==2.11.5
 requests==2.32.3
 aiofiles==0.8.0
 python-dotenv==1.0.0

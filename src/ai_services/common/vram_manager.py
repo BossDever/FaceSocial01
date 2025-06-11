@@ -1,30 +1,44 @@
-# cSpell:disable
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 VRAM Manager สำหรับจัดการหน่วยความจำ GPU ในระบบ AI
-Enhanced version with better error handling and logging
+Enhanced version with better error handling and performance monitoring
 """
+
 import asyncio
 import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Any, Optional, List
-import torch
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
 
 logger = logging.getLogger(__name__)
 
+
 class AllocationPriority(Enum):
+    """ระดับความสำคัญของการจัดสรร"""
     CRITICAL = "critical"  # ต้องอยู่บน GPU เสมอ
     HIGH = "high"          # ควรอยู่บน GPU
     MEDIUM = "medium"      # เป็นตัวเลือก
     LOW = "low"            # GPU ถ้าว่าง
 
+
 class AllocationLocation(Enum):
+    """ตำแหน่งของการจัดสรร"""
     GPU = "gpu"
     CPU = "cpu"
 
+
 @dataclass
 class ModelAllocation:
+    """ข้อมูลการจัดสรรโมเดล"""
     model_id: str
     priority: AllocationPriority
     service_id: str
@@ -32,6 +46,11 @@ class ModelAllocation:
     vram_allocated: int
     status: str
     timestamp: float = 0.0
+
+    def __post_init__(self):
+        if self.timestamp == 0.0:
+            self.timestamp = time.time()
+
 
 class VRAMManager:
     """
@@ -50,12 +69,12 @@ class VRAMManager:
         self.allocation_history: List[Dict[str, Any]] = []
         self.max_history_size = config.get("max_history_size", 1000)
         
-        logger.info(f"VRAM Manager initialized with {self.total_vram/1024/1024:.1f}MB total VRAM")
+        logger.info(f"🔧 VRAM Manager initialized with {self.total_vram/1024/1024:.1f}MB total VRAM")
         
     def _get_total_vram(self) -> int:
         """ตรวจสอบขนาด VRAM ทั้งหมดที่มี"""
         try:
-            if torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch.cuda.is_available():
                 device = torch.cuda.current_device()
                 properties = torch.cuda.get_device_properties(device)
                 total_memory = properties.total_memory
@@ -66,17 +85,17 @@ class VRAMManager:
                 
                 usable_memory = max(0, total_memory - reserved_bytes)
                 
-                logger.info(f"GPU: {properties.name}")
-                logger.info(f"Total VRAM: {total_memory/1024/1024:.1f}MB")
-                logger.info(f"Reserved: {reserved_mb}MB")
-                logger.info(f"Usable: {usable_memory/1024/1024:.1f}MB")
+                logger.info(f"🎮 GPU: {properties.name}")
+                logger.info(f"💾 Total VRAM: {total_memory/1024/1024:.1f}MB")
+                logger.info(f"🔒 Reserved: {reserved_mb}MB")
+                logger.info(f"✅ Usable: {usable_memory/1024/1024:.1f}MB")
                 
                 return usable_memory
             else:
-                logger.warning("CUDA not available, using CPU-only mode")
+                logger.warning("⚠️ CUDA not available, using CPU-only mode")
                 return 0
         except Exception as e:
-            logger.error(f"Error getting VRAM info: {e}")
+            logger.error(f"❌ Error getting VRAM info: {e}")
             return 0
     
     async def request_model_allocation(
@@ -92,17 +111,18 @@ class VRAMManager:
         """
         async with self.lock:
             try:
+                priority_enum = AllocationPriority(priority)
+                
                 # ตรวจสอบว่ามี GPU หรือไม่
                 if self.total_vram == 0:
-                    logger.warning(f"No GPU available for model {model_id}, using CPU")
+                    logger.warning(f"⚠️ No GPU available for model {model_id}, using CPU")
                     allocation = ModelAllocation(
                         model_id=model_id,
-                        priority=AllocationPriority(priority),
+                        priority=priority_enum,
                         service_id=service_id,
                         location=AllocationLocation.CPU,
                         vram_allocated=0,
-                        status="fallback_to_cpu_no_gpu",
-                        timestamp=time.time()
+                        status="fallback_to_cpu_no_gpu"
                     )
                     self.model_allocations[model_id] = allocation
                     self._log_allocation_event("fallback_cpu", allocation)
@@ -111,7 +131,7 @@ class VRAMManager:
                 # ถ้าโมเดลถูกโหลดอยู่แล้ว
                 if model_id in self.model_allocations:
                     allocation = self.model_allocations[model_id]
-                    logger.info(f"Model {model_id} already allocated at {allocation.location.value}")
+                    logger.info(f"📋 Model {model_id} already allocated at {allocation.location.value}")
                     return allocation
                 
                 # คำนวณขนาด VRAM ที่ต้องการ
@@ -123,12 +143,12 @@ class VRAMManager:
                 available_vram = self.total_vram - self.allocated_vram
                 
                 # จัดสรร VRAM
-                if available_vram >= vram_required or priority == AllocationPriority.CRITICAL.value:
+                if available_vram >= vram_required or priority_enum == AllocationPriority.CRITICAL:
                     # สำหรับ CRITICAL ถ้า VRAM ไม่พอ จะต้องย้ายโมเดลอื่นออก
-                    if available_vram < vram_required and priority == AllocationPriority.CRITICAL.value:
+                    if available_vram < vram_required and priority_enum == AllocationPriority.CRITICAL:
                         freed = self._free_vram_for_critical_model(vram_required - available_vram)
                         if freed < vram_required - available_vram:
-                            logger.error(f"Cannot free enough VRAM for critical model {model_id}")
+                            logger.error(f"❌ Cannot free enough VRAM for critical model {model_id}")
                     
                     # ตรวจสอบ VRAM อีกครั้งหลังจากปล่อย
                     available_vram = self.total_vram - self.allocated_vram
@@ -136,35 +156,33 @@ class VRAMManager:
                         self.allocated_vram += vram_required
                         allocation = ModelAllocation(
                             model_id=model_id,
-                            priority=AllocationPriority(priority),
+                            priority=priority_enum,
                             service_id=service_id,
                             location=AllocationLocation.GPU,
                             vram_allocated=vram_required,
-                            status="allocated_on_gpu",
-                            timestamp=time.time()
+                            status="allocated_on_gpu"
                         )
                         self.model_allocations[model_id] = allocation
-                        logger.info(f"Allocated {vram_required/1024/1024:.1f}MB VRAM for {model_id}")
+                        logger.info(f"✅ Allocated {vram_required/1024/1024:.1f}MB VRAM for {model_id}")
                         self._log_allocation_event("allocated", allocation)
                         return allocation
                 
                 # ถ้า VRAM ไม่พอ ใช้ CPU แทน
-                logger.warning(f"Insufficient VRAM for {model_id} ({vram_required/1024/1024:.1f}MB > {available_vram/1024/1024:.1f}MB)")
+                logger.warning(f"⚠️ Insufficient VRAM for {model_id} ({vram_required/1024/1024:.1f}MB > {available_vram/1024/1024:.1f}MB)")
                 allocation = ModelAllocation(
                     model_id=model_id,
-                    priority=AllocationPriority(priority),
+                    priority=priority_enum,
                     service_id=service_id,
                     location=AllocationLocation.CPU,
                     vram_allocated=0,
-                    status="fallback_to_cpu_insufficient_vram",
-                    timestamp=time.time()
+                    status="fallback_to_cpu_insufficient_vram"
                 )
                 self.model_allocations[model_id] = allocation
                 self._log_allocation_event("fallback_cpu", allocation)
                 return allocation
                 
             except Exception as e:
-                logger.error(f"Error in model allocation for {model_id}: {e}")
+                logger.error(f"❌ Error in model allocation for {model_id}: {e}")
                 # Return CPU allocation as fallback
                 allocation = ModelAllocation(
                     model_id=model_id,
@@ -172,15 +190,14 @@ class VRAMManager:
                     service_id=service_id,
                     location=AllocationLocation.CPU,
                     vram_allocated=0,
-                    status=f"error_fallback_cpu: {str(e)}",
-                    timestamp=time.time()
+                    status=f"error_fallback_cpu: {str(e)}"
                 )
                 self.model_allocations[model_id] = allocation
                 return allocation
     
     def _free_vram_for_critical_model(self, vram_needed: int) -> int:
         """
-        ย้ายโมเดลที่มีความสำคัญน้อยกว่าออกจาก GPU เพื่อให้มี VRAM พอสำหรับโมเดลที่สำคัญกว่า
+        ย้ายโมเดลที่มีความสำคัญน้อยกว่าออกจาก GPU
         Returns: Amount of VRAM freed
         """
         # เรียงลำดับโมเดลตามความสำคัญจากน้อยไปมาก
@@ -197,7 +214,7 @@ class VRAMManager:
                 
             # ย้ายโมเดลออกจาก GPU
             vram_freed += allocation.vram_allocated
-            logger.info(f"Moving model {allocation.model_id} to CPU to free {allocation.vram_allocated/1024/1024:.1f}MB")
+            logger.info(f"🔄 Moving model {allocation.model_id} to CPU to free {allocation.vram_allocated/1024/1024:.1f}MB")
             
             # อัปเดตสถานะ
             allocation.location = AllocationLocation.CPU
@@ -254,7 +271,7 @@ class VRAMManager:
                     # ลด VRAM ที่ใช้อยู่
                     if allocation.location == AllocationLocation.GPU:
                         self.allocated_vram -= allocation.vram_allocated
-                        logger.info(f"Released {allocation.vram_allocated/1024/1024:.1f}MB VRAM from {model_id}")
+                        logger.info(f"🔓 Released {allocation.vram_allocated/1024/1024:.1f}MB VRAM from {model_id}")
                     
                     # Log event
                     self._log_allocation_event("released", allocation)
@@ -263,11 +280,11 @@ class VRAMManager:
                     del self.model_allocations[model_id]
                     return True
                 else:
-                    logger.warning(f"Model {model_id} not found in allocations")
+                    logger.warning(f"⚠️ Model {model_id} not found in allocations")
                     return False
                     
             except Exception as e:
-                logger.error(f"Error releasing allocation for {model_id}: {e}")
+                logger.error(f"❌ Error releasing allocation for {model_id}: {e}")
                 return False
     
     async def get_vram_status(self) -> Dict[str, Any]:
@@ -281,7 +298,7 @@ class VRAMManager:
                 gpu_memory_used = 0
                 gpu_memory_cached = 0
                 
-                if torch.cuda.is_available():
+                if TORCH_AVAILABLE and torch.cuda.is_available():
                     gpu_memory_used = torch.cuda.memory_allocated(0)
                     gpu_memory_cached = torch.cuda.memory_reserved(0)
                 
@@ -311,12 +328,17 @@ class VRAMManager:
                 return status
                 
             except Exception as e:
-                logger.error(f"Error getting VRAM status: {e}")
+                logger.error(f"❌ Error getting VRAM status: {e}")
                 return {
                     "error": str(e),
                     "total_vram": self.total_vram,
                     "allocated_vram": self.allocated_vram
                 }
+    
+    async def get_available_memory(self) -> int:
+        """Get available VRAM in bytes"""
+        async with self.lock:
+            return max(0, self.total_vram - self.allocated_vram)
     
     async def get_allocation_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent allocation history"""
@@ -339,6 +361,42 @@ class VRAMManager:
             
             for model_id in to_remove:
                 del self.model_allocations[model_id]
-                logger.info(f"Cleaned up stale allocation for {model_id}")
+                logger.info(f"🧹 Cleaned up stale allocation for {model_id}")
             
             return cleaned
+    
+    async def optimize_allocations(self) -> bool:
+        """Optimize current allocations for better performance"""
+        try:
+            async with self.lock:
+                # Sort models by priority and usage
+                models_by_priority = sorted(
+                    self.model_allocations.values(),
+                    key=lambda x: (self._priority_weight(x.priority), x.timestamp),
+                    reverse=True
+                )
+                
+                # Ensure critical models are on GPU
+                optimized = False
+                for allocation in models_by_priority:
+                    if (allocation.priority == AllocationPriority.CRITICAL and 
+                        allocation.location == AllocationLocation.CPU):
+                        
+                        # Try to move to GPU
+                        vram_needed = self.config.get("model_vram_estimates", {}).get(
+                            allocation.model_id, 512 * 1024 * 1024
+                        )
+                        
+                        if self.total_vram - self.allocated_vram >= vram_needed:
+                            allocation.location = AllocationLocation.GPU
+                            allocation.vram_allocated = vram_needed
+                            self.allocated_vram += vram_needed
+                            allocation.status = "optimized_to_gpu"
+                            optimized = True
+                            logger.info(f"🚀 Optimized: Moved critical model {allocation.model_id} to GPU")
+                
+                return optimized
+                
+        except Exception as e:
+            logger.error(f"❌ Error optimizing allocations: {e}")
+            return False
