@@ -6,10 +6,9 @@ Enhanced models with better error handling and validation
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Union, Tuple
+from typing import List, Optional, Dict, Any
 import numpy as np
 from enum import Enum
-import time
 
 
 class RecognitionModel(Enum):
