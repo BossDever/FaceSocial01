@@ -8,9 +8,7 @@ import numpy as np
 import cv2
 import os
 import time
-import asyncio
-from typing import Optional, Dict, Any, List, Tuple
-from dataclasses import dataclass
+from typing import Optional, Dict, Any, List, Union, cast
 
 # Conditional imports
 try:
@@ -18,14 +16,14 @@ try:
     ONNX_AVAILABLE = True
 except ImportError:
     ONNX_AVAILABLE = False
-    ort = None
+    ort = None  # type: ignore
 
 try:
     import torch
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    torch = None
+    torch = None  # type: ignore
 
 from .models import (
     FaceEmbedding,
@@ -33,7 +31,6 @@ from .models import (
     FaceRecognitionResult,
     FaceComparisonResult,
     RecognitionModel,
-    RecognitionQuality,
     ModelPerformanceStats,
     RecognitionConfig,
     FaceGallery
@@ -74,8 +71,8 @@ class FaceRecognitionService:
         # Performance tracking
         self.stats = ModelPerformanceStats()
         
-        # Model configurations
-        self.model_configs = {
+        # Model configurations with explicit types
+        self.model_configs: Dict[RecognitionModel, Dict[str, Union[str, tuple, list, int]]] = {
             RecognitionModel.FACENET: {
                 'model_path': 'model/face-recognition/facenet_vggface2.onnx',
                 'input_size': (160, 160),
@@ -138,7 +135,7 @@ class FaceRecognitionService:
             if self.current_model is not None:
                 del self.current_model
                 self.current_model = None
-                if TORCH_AVAILABLE and torch.cuda.is_available():
+                if TORCH_AVAILABLE and torch and torch.cuda.is_available():
                     torch.cuda.empty_cache()
             
             # Get model configuration
@@ -147,7 +144,8 @@ class FaceRecognitionService:
                 self.logger.error(f"❌ Unknown model type: {model_type}")
                 return False
             
-            model_path = model_config['model_path']
+            # Type-safe access to model path
+            model_path = cast(str, model_config['model_path'])
             if not os.path.exists(model_path):
                 self.logger.error(f"❌ Model file not found: {model_path}")
                 return False
@@ -155,16 +153,20 @@ class FaceRecognitionService:
             self.logger.info(f"🔄 Loading {model_type.value} model from: {model_path}")
             
             # Configure ONNX session options
+            if not ort:
+                self.logger.error("❌ ONNX Runtime not available")
+                return False
+                
             session_options = ort.SessionOptions()
             session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
             session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             
             # Configure providers
-            providers = []
+            providers: List[Union[str, tuple]] = []
             device_used = "CPU"
             
             if (self.config.enable_gpu_optimization and 
-                TORCH_AVAILABLE and torch.cuda.is_available()):
+                TORCH_AVAILABLE and torch and torch.cuda.is_available()):
                 try:
                     # GPU memory configuration
                     gpu_mem_limit = int(2 * 1024 * 1024 * 1024)  # 2GB
@@ -195,15 +197,16 @@ class FaceRecognitionService:
             self.current_model_type = model_type
             
             # Log success
-            actual_providers = self.current_model.get_providers()
-            if 'CUDAExecutionProvider' in actual_providers:
-                device_used = "GPU"
-            else:
-                device_used = "CPU"
-                
-            self.logger.info(f"✅ {model_type.value} loaded successfully on {device_used}")
-            self.logger.info(f"   Input: {self.current_model.get_inputs()[0].name}")
-            self.logger.info(f"   Output: {self.current_model.get_outputs()[0].name}")
+            if self.current_model:
+                actual_providers = self.current_model.get_providers()
+                if 'CUDAExecutionProvider' in actual_providers:
+                    device_used = "GPU"
+                else:
+                    device_used = "CPU"
+                    
+                self.logger.info(f"✅ {model_type.value} loaded successfully on {device_used}")
+                self.logger.info(f"   Input: {self.current_model.get_inputs()[0].name}")
+                self.logger.info(f"   Output: {self.current_model.get_outputs()[0].name}")
             
             # Update VRAM allocation if needed
             if self.vram_manager:
@@ -229,7 +232,7 @@ class FaceRecognitionService:
             
             # Get model configuration
             model_config = self.model_configs[self.current_model_type]
-            input_size = model_config['input_size']
+            input_size = cast(tuple, model_config['input_size'])
             
             # Create dummy input
             dummy_input = np.random.randn(1, 3, input_size[1], input_size[0]).astype(np.float32)
@@ -259,9 +262,9 @@ class FaceRecognitionService:
             
             # Get model configuration
             model_config = self.model_configs[self.current_model_type]
-            target_size = model_config['input_size']
-            mean = np.array(model_config['mean'])
-            std = np.array(model_config['std'])
+            target_size = cast(tuple, model_config['input_size'])
+            mean = np.array(cast(list, model_config['mean']))
+            std = np.array(cast(list, model_config['std']))
             
             # Ensure image is in correct format
             if len(face_image.shape) == 3 and face_image.shape[2] == 3:
@@ -275,7 +278,7 @@ class FaceRecognitionService:
                 self.logger.error(f"❌ Unsupported image format: {face_image.shape}")
                 return None
             
-            # Resize image
+            # Resize image with proper type conversion
             face_resized = cv2.resize(face_image, target_size, interpolation=cv2.INTER_LANCZOS4)
             
             # Normalize
@@ -346,6 +349,10 @@ class FaceRecognitionService:
             
             # Run inference
             try:
+                if self.current_model is None:
+                    self.logger.error("❌ Model is not loaded")
+                    return None
+                    
                 input_name = self.current_model.get_inputs()[0].name
                 outputs = self.current_model.run(None, {input_name: input_tensor})
                 
@@ -392,8 +399,9 @@ class FaceRecognitionService:
                 quality=embedding.face_quality
             )
             
-            device_used = "cuda" if 'CUDAExecutionProvider' in self.current_model.get_providers() else "cpu"
-            self.stats.update_device_usage(processing_time, device_used)
+            if self.current_model:
+                device_used = "cuda" if 'CUDAExecutionProvider' in self.current_model.get_providers() else "cpu"
+                self.stats.update_device_usage(processing_time, device_used)
             
             self.logger.debug(f"✅ Embedding extracted: {embedding_vector.shape}, "
                             f"quality={quality_score:.1f}, time={processing_time*1000:.1f}ms")
@@ -406,6 +414,8 @@ class FaceRecognitionService:
             self.logger.error(f"❌ Embedding extraction failed: {e}")
             return None
 
+    # [ส่วนที่เหลือของโค้ดยังคงเหมือนเดิม...]
+    
     def compare_faces(self, embedding1: np.ndarray, embedding2: np.ndarray, 
                      model_used: Optional[str] = None) -> FaceComparisonResult:
         """Compare two face embeddings"""
@@ -630,7 +640,7 @@ class FaceRecognitionService:
             self.models_cache.clear()
             
             # Clear GPU cache if available
-            if TORCH_AVAILABLE and torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch and torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
                 self.logger.info("🧹 GPU cache cleared")

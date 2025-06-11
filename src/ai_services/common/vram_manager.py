@@ -8,14 +8,14 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 try:
     import torch
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    torch = None
+    torch = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class ModelAllocation:
     status: str
     timestamp: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp == 0.0:
             self.timestamp = time.time()
 
@@ -65,7 +65,7 @@ class ModelAllocation:
 class VRAMManager:
     """GPU Memory Manager for AI Models"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.model_allocations: Dict[str, ModelAllocation] = {}
         self.total_vram = self._get_total_vram()
@@ -81,10 +81,10 @@ class VRAMManager:
     def _get_total_vram(self) -> int:
         """Get total available VRAM"""
         try:
-            if TORCH_AVAILABLE and torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch and torch.cuda.is_available():
                 device = torch.cuda.current_device()
                 properties = torch.cuda.get_device_properties(device)
-                total_memory = properties.total_memory
+                total_memory: int = int(properties.total_memory)
                 
                 # Reserve memory for system
                 reserved_mb = self.config.get("reserved_vram_mb", 512)
@@ -97,7 +97,7 @@ class VRAMManager:
                 logger.info(f"🔒 Reserved: {reserved_mb}MB")
                 logger.info(f"✅ Usable: {usable_memory/1024/1024:.1f}MB")
                 
-                return usable_memory
+                return int(usable_memory)
             else:
                 logger.warning("⚠️ CUDA not available, using CPU-only mode")
                 return 0
@@ -241,7 +241,7 @@ class VRAMManager:
         }
         return weights.get(priority, 1)
     
-    def _log_allocation_event(self, event_type: str, allocation: ModelAllocation):
+    def _log_allocation_event(self, event_type: str, allocation: ModelAllocation) -> None:
         """Log allocation events for monitoring"""
         event = {
             "timestamp": time.time(),
@@ -293,7 +293,7 @@ class VRAMManager:
                 gpu_memory_used = 0
                 gpu_memory_cached = 0
                 
-                if TORCH_AVAILABLE and torch.cuda.is_available():
+                if TORCH_AVAILABLE and torch and torch.cuda.is_available():
                     gpu_memory_used = torch.cuda.memory_allocated(0)
                     gpu_memory_cached = torch.cuda.memory_reserved(0)
                 

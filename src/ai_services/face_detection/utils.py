@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import os
 import logging
-from typing import List, Tuple, Optional, Dict, Any, Union
+from typing import List, Tuple, Optional, Dict, Any, Union, cast
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -164,8 +164,8 @@ def calculate_face_quality(detection: BoundingBox, image_shape: Tuple[int, int],
         คะแนนคุณภาพ 0-100
     """
     try:
-        # Default configuration
-        default_config = {
+        # Default configuration with explicit types
+        default_config: Dict[str, Union[int, float, Tuple[int, int]]] = {
             'size_weight': 30,
             'area_weight': 25,
             'confidence_weight': 30,
@@ -181,19 +181,21 @@ def calculate_face_quality(detection: BoundingBox, image_shape: Tuple[int, int],
         if config:
             default_config.update(config)
         
-        weights = {
-            'size_weight': default_config['size_weight'],
-            'area_weight': default_config['area_weight'],
-            'confidence_weight': default_config['confidence_weight'],
-            'aspect_weight': default_config['aspect_weight']
+        # Extract values with type casting
+        size_thresholds = {
+            'excellent': cast(Tuple[int, int], default_config['excellent_size']),
+            'good': cast(Tuple[int, int], default_config['good_size']),
+            'acceptable': cast(Tuple[int, int], default_config['acceptable_size']),
+            'minimum': cast(Tuple[int, int], default_config['minimum_size'])
         }
         
-        size_thresholds = {
-            'excellent': default_config['excellent_size'],
-            'good': default_config['good_size'],
-            'acceptable': default_config['acceptable_size'],
-            'minimum': default_config['minimum_size']
-        }
+        # Weight values with type casting
+        size_weight = cast(int, default_config['size_weight'])
+        area_weight = cast(int, default_config['area_weight'])
+        confidence_weight = cast(int, default_config['confidence_weight'])
+        aspect_weight = cast(int, default_config['aspect_weight'])
+        bonus_score = cast(float, default_config['bonus_score_for_high_confidence'])
+        high_conf_threshold = cast(float, default_config['high_confidence_threshold'])
         
         # คะแนนตามขนาด
         face_width = detection.width
@@ -254,15 +256,15 @@ def calculate_face_quality(detection: BoundingBox, image_shape: Tuple[int, int],
         
         # คำนวณคะแนนรวม
         final_score = (
-            size_score * weights['size_weight'] / 100 +
-            area_score * weights['area_weight'] / 100 +
-            confidence_score * weights['confidence_weight'] / 100 +
-            aspect_score * weights['aspect_weight'] / 100
+            size_score * size_weight / 100 +
+            area_score * area_weight / 100 +
+            confidence_score * confidence_weight / 100 +
+            aspect_score * aspect_weight / 100
         )
         
         # เพิ่ม bonus score สำหรับความมั่นใจสูง
-        if detection.confidence >= default_config['high_confidence_threshold']:
-            final_score += default_config['bonus_score_for_high_confidence']
+        if detection.confidence >= high_conf_threshold:
+            final_score += bonus_score
         
         final_score = min(final_score, 100.0)
         
