@@ -7,34 +7,35 @@ SuwitBoss/wofk - Clean & Organized Version
 
 import os
 import sys
-import asyncio
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Dict, Any, AsyncGenerator
 
+# Add project root to Python path FIRST
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# Standard library and third-party imports
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
-# Add project root to Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# Import core components
-from src.core.config import get_settings
-from src.core.vram_manager import VRAMManager
+# Import core components - after sys.path modification
+from src.core.config import get_settings  # type: ignore
+from src.core.vram_manager import VRAMManager  # type: ignore
 
 # Import AI services
-from src.ai_services.face_detection.face_detection_service import FaceDetectionService
-from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService
-from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService
+from src.ai_services.face_detection.face_detection_service import FaceDetectionService  # type: ignore
+from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService  # type: ignore
+from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService  # type: ignore
 
 # Import API routes
-from src.api.face_detection import router as face_detection_router
-from src.api.face_recognition import router as face_recognition_router
-from src.api.face_analysis import router as face_analysis_router
+from src.api.face_detection import router as face_detection_router  # type: ignore
+from src.api.face_recognition import router as face_recognition_router  # type: ignore
+from src.api.face_analysis import router as face_analysis_router  # type: ignore
 
 # Setup logging
 logging.basicConfig(
@@ -49,11 +50,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global service instances
-services = {}
+services: Dict[str, Any] = {}
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager"""
     
     # Startup
@@ -160,13 +161,15 @@ app.include_router(face_analysis_router, prefix="/api")
 # Mount static files
 app.mount("/output", StaticFiles(directory="output"), name="output")
 
+
 @app.get("/")
-async def root():
+async def root() -> RedirectResponse:
     """Root endpoint"""
     return RedirectResponse(url="/docs")
 
+
 @app.get("/health")
-async def health_check():
+async def health_check() -> Dict[str, Any]:
     """Health check endpoint"""
     try:
         return {
@@ -186,8 +189,9 @@ async def health_check():
             "version": "2.0.0"
         }
 
-@app.get("/system/info")
-async def system_info():
+
+@app.get("/system/info")  
+async def system_info() -> Dict[str, Any]:
     """System information endpoint"""
     try:
         vram_status = {}
@@ -196,7 +200,7 @@ async def system_info():
         
         return {
             "system": "Face Recognition System",
-            "version": "2.0.0",
+            "version": "2.0.0", 
             "services_count": len(services),
             "vram_status": vram_status
         }
