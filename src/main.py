@@ -198,16 +198,19 @@ async def initialize_services(app: FastAPI, settings: Any) -> bool:
         setattr(app.state, VRAM_MANAGER_SERVICE, vram_manager)
         logger.info("✅ VRAM Manager initialized")
 
-        # Initialize core services
+        # แก้ไขชื่อ config ให้ตรงกับที่กำหนดใน config.py
         services_to_init = {
             FACE_DETECTION_SERVICE: (
-                FaceDetectionService, settings.face_detection_config
+                FaceDetectionService,
+                settings.detection_config  # ✅ แก้ไขจาก face_detection_config
             ),
             FACE_RECOGNITION_SERVICE: (
-                FaceRecognitionService, settings.face_recognition_config
+                FaceRecognitionService,
+                settings.recognition_config  # ✅ แก้ไขจาก face_recognition_config
             ),
             FACE_ANALYSIS_SERVICE: (
-                FaceAnalysisService, settings.face_analysis_config
+                FaceAnalysisService,
+                settings.analysis_config  # ✅ แก้ไขจาก face_analysis_config
             ),
         }
 
