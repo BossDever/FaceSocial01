@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Tuple
 import numpy as np
 from enum import Enum
+from pydantic import BaseModel  # Add pydantic BaseModel
+
+# Import BoundingBox from the correct location to re-export it
+from src.ai_services.face_detection.utils import BoundingBox
 
 # Import related models
 try:
@@ -97,6 +101,24 @@ class AnalysisConfig:
 
     def __post_init__(self):
         """Post-initialization validation and defaults"""
+        # Convert string 'mode' to AnalysisMode enum if necessary
+        if isinstance(self.mode, str):
+            try:
+                self.mode = AnalysisMode(self.mode)
+            except ValueError:
+                # Default to FULL_ANALYSIS if conversion fails
+                self.mode = AnalysisMode.FULL_ANALYSIS
+                # Consider logging a warning here if a logger is available
+
+        # Convert string 'quality_level' to QualityLevel enum if necessary
+        if isinstance(self.quality_level, str):
+            try:
+                self.quality_level = QualityLevel(self.quality_level)
+            except ValueError:
+                # Default to BALANCED if conversion fails
+                self.quality_level = QualityLevel.BALANCED
+                # Consider logging a warning here if a logger is available
+        
         # Set default detection config if not provided
         if self.detection_config is None:
             self.detection_config = DetectionConfig(
@@ -133,6 +155,18 @@ class AnalysisConfig:
             "return_embeddings": self.return_embeddings,
             "return_detailed_stats": self.return_detailed_stats,
         }
+
+
+# Define the missing FaceAnalysisJSONRequest model
+class FaceAnalysisJSONRequest(BaseModel):
+    image_base64: str
+    mode: Optional[AnalysisMode] = AnalysisMode.FULL_ANALYSIS
+    config: Optional[AnalysisConfig] = None
+    gallery: Optional[Dict[str, Any]] = None
+
+    class Config:
+        use_enum_values = True
+        arbitrary_types_allowed = True
 
 
 @dataclass

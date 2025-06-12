@@ -366,17 +366,17 @@ async def health_check(request: Request) -> Dict[str, Any]:
 # Main entry point
 if __name__ == "__main__":
     settings = get_settings()
-    logger.info(f"Starting server on {settings.server_host}:{settings.server_port}")
+    logger.info(f"Starting server on {settings.host}:{settings.port}")
     
-    # Ensure log directory exists
-    log_dir = Path(settings.log_config.get("dir", "logs"))
+    # Ensure log directory exists  
+    log_dir = Path("logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
     uvicorn.run(
-        "main:app", # Changed from app to "main:app" for reload
-        host=settings.server_host,
-        port=settings.server_port,
-        reload=settings.debug_mode, # Enable reload in debug mode
-        log_level=settings.log_config.get("level", "info").lower(),
-        # workers=settings.server_workers # Consider if multi-worker is needed
+        "src.main:app",  # เปลี่ยนเป็น src.main:app
+        host=settings.host,
+        port=settings.port,
+        reload=settings.reload,  # ใช้ settings.reload แทน settings.debug_mode
+        log_level=settings.log_level.lower(),
+        # workers=1  # Comment out workers เมื่อใช้ reload
     )

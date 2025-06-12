@@ -85,6 +85,38 @@ def register_face(image_path: str, person_id: str, person_name: str) -> Optional
                 print(f"   Response content: {e.response.text}")
         return None
 
+def get_current_gallery() -> Optional[Dict[str, Any]]:
+    """Get current face gallery from the recognition service"""
+    url = f"{API_BASE_URL}/face-recognition/get-gallery"
+    
+    try:
+        print("🔍 Fetching current gallery...")
+        response = requests.get(url)
+        response.raise_for_status()
+        gallery_data = response.json()
+        
+        # Ensure gallery_data is a dictionary before proceeding
+        if not isinstance(gallery_data, dict):
+            print(f"⚠️ Gallery data is not in expected format (dict), got {type(gallery_data)}")
+            return None
+            
+        gallery = cast(Dict[str, Any], gallery_data)
+        
+        if gallery:
+            print(f"✅ Gallery fetched: {len(gallery)} people registered")
+            for person_id, person_data in gallery.items():
+                name = person_data.get('name', person_id)
+                embedding_count = len(person_data.get('embeddings', []))
+                print(f"   - {person_id} ({name}): {embedding_count} embeddings")
+        else:
+            print("⚠️ Gallery is empty")
+        
+        return gallery
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error fetching gallery: {e}")
+        return None
+
 def draw_faces_on_image(image: np.ndarray, analysis_results: Dict[str, Any]) -> np.ndarray:
     """Draw bounding boxes and labels on image"""
     img_result = image.copy()
@@ -166,6 +198,7 @@ def draw_faces_on_image(image: np.ndarray, analysis_results: Dict[str, Any]) -> 
     return img_result
 
 def analyze_and_draw_faces(image_path: str, output_dir: str,
+                           gallery: Optional[Dict[str, Any]] = None,
                            detection_model: str = "yolov9c",
                            recognition_model: str = "facenet") -> None:
     """Analyzes an image for faces, recognizes them, draws bounding boxes and labels."""
@@ -184,10 +217,11 @@ def analyze_and_draw_faces(image_path: str, output_dir: str,
             print(f"❌ Error: Could not encode image {image_path}")
             return
         
-        # Prepare request data
+        # Prepare request data with gallery
         request_data = {
             "image_base64": image_base64,
             "mode": "full_analysis",
+            "gallery": gallery,  # ✅ เพิ่ม gallery เข้าไป
             "config": {
                 "detection_model": detection_model,
                 "recognition_model": recognition_model,
@@ -197,6 +231,11 @@ def analyze_and_draw_faces(image_path: str, output_dir: str,
         }
         
         print(f"🔍 Analyzing {os.path.basename(image_path)}...")
+        if gallery:
+            print(f"   Using gallery with {len(gallery)} people")
+        else:
+            print("   No gallery provided (detection only)")
+            
         start_time = time.time()
         response = requests.post(url, json=request_data)
         response.raise_for_status()
@@ -252,7 +291,7 @@ def analyze_and_draw_faces(image_path: str, output_dir: str,
     except Exception as e:
         print(f"❌ Unexpected error analyzing {os.path.basename(image_path)}: {e}")
 
-def print_system_status():
+def print_system_status() -> None:
     """Print system status and health check"""
     try:
         health_url = f"{API_BASE_URL.replace('/api', '')}/health"
@@ -315,6 +354,17 @@ def main() -> None:
     print(f"\n✅ Registration complete: {registered_count} faces registered")
     print()
     
+    # --- Get Gallery ---
+    print("📋 GALLERY RETRIEVAL")
+    print("-" * 30)
+    
+    gallery = get_current_gallery()
+    if not gallery:
+        print("❌ Failed to get gallery, proceeding without recognition...")
+        gallery = None
+    
+    print()
+    
     # --- Analysis Phase ---
     print("🔍 ANALYSIS PHASE")
     print("-" * 30)
@@ -334,10 +384,10 @@ def main() -> None:
     print(f"Found {len(all_test_images)} images to analyze")
     print()
     
-    # Analyze each image
+    # Analyze each image with gallery
     for i, img_path in enumerate(all_test_images, 1):
         print(f"[{i}/{len(all_test_images)}] Processing: {os.path.basename(img_path)}")
-        analyze_and_draw_faces(img_path, OUTPUT_DIR)
+        analyze_and_draw_faces(img_path, OUTPUT_DIR, gallery=gallery)  # ✅ ส่ง gallery
         time.sleep(0.1)  # Small delay
     
     # --- Summary ---
@@ -345,6 +395,7 @@ def main() -> None:
     print("-" * 30)
     print(f"✅ Registration: {registered_count} faces registered")
     print(f"✅ Analysis: {len(all_test_images)} images processed")
+    print(f"✅ Gallery: {'Used' if gallery else 'Not available'}")
     print(f"📁 Output directory: {OUTPUT_DIR}")
     print()
     

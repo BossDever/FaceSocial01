@@ -8,7 +8,7 @@ Enhanced End-to-End Solution with better error handling and performance
 
 import numpy as np
 import cv2
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, Union
 import logging
 import time
 import asyncio
@@ -18,8 +18,8 @@ from .models import (
     FaceResult,
     AnalysisConfig,
     AnalysisMode,
-    BatchAnalysisResult,
     QualityLevel,
+    BoundingBox,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,24 +195,55 @@ class FaceAnalysisService:
             raise RuntimeError("Face recognition service not available")
 
         try:
-            recognition_result = await self.face_recognition_service.recognize_face(
-                image,
-                gallery,
-                config.recognition_model,
-                config.gallery_top_k,
-            )
-            face_result = await self._create_recognition_only_result(
-                image, recognition_result
-            )
-            if face_result:
-                faces.append(face_result)
-            recognition_model_used = (
-                recognition_result.model_used.value
-                if recognition_result.model_used
-                else None
-            )
+            # Convert np.ndarray to bytes for recognize_faces
+            is_success, buffer = cv2.imencode(".jpg", image) # Assuming image is BGR
+            if not is_success:
+                self.logger.error("❌ Failed to encode image for recognition-only mode")
+                image_bytes_for_recognition = None
+            else:
+                image_bytes_for_recognition = buffer.tobytes()
+
+            recognition_result_dict = {
+                "success": False,
+                "error": "Image encoding failed or not processed",
+            }
+
+            if image_bytes_for_recognition:
+                recognition_result_dict = (
+                    await self.face_recognition_service.recognize_faces(
+                        image_bytes=image_bytes_for_recognition,
+                        model_name=config.recognition_model,
+                    )
+                )
+
+            if recognition_result_dict.get("success"):
+                # _create_recognition_only_result expects the image
+                # and the dict from recognize_faces
+                face_result = await self._create_recognition_only_result(
+                    image, recognition_result_dict
+                )
+                if face_result:
+                    if isinstance(face_result, list):
+                        faces.extend(face_result)
+                    else:
+                        faces.append(face_result)
+
+                recognition_model_used = (
+                    config.recognition_model.value
+                    if config.recognition_model
+                    else None
+                )
+            else:
+                self.logger.error(
+                    f"❌ Recognition-only processing failed: "
+                    f"{recognition_result_dict.get('error')}"
+                )
         except Exception as rec_error:
-            self.logger.error(f"❌ Recognition-only failed: {rec_error}")
+            self.logger.error(
+                f"❌ Recognition-only failed with exception: {rec_error}",
+                exc_info=True,
+            )
+            # recognition_model_used remains None
 
         return faces, time.time() - recognition_start_time, recognition_model_used
 
@@ -421,419 +452,367 @@ class FaceAnalysisService:
     ):
         """จดจำใบหน้าเดี่ยว"""
         try:
-            recognition_result = await self.face_recognition_service.recognize_face(
-                face_crop, gallery, config.recognition_model, config.gallery_top_k
+            # Convert face_crop (np.ndarray) to bytes for recognize_faces
+            is_success, buffer = cv2.imencode(".jpg", face_crop)
+            if not is_success:
+                self.logger.error("Failed to encode face_crop for recognition")
+                return
+            face_crop_bytes = buffer.tobytes()
+
+            recognition_result_dict = await (
+                self.face_recognition_service.recognize_faces(
+                    image_bytes=face_crop_bytes, model_name=config.recognition_model
+                )
             )
 
-            # อัปเดต face_result ด้วยผลลัพธ์ recognition
-            if recognition_result.query_embedding:
-                face_result.embedding = recognition_result.query_embedding
+            # Ensure recognition_result_dict is a dictionary
+            if not isinstance(recognition_result_dict, dict):
+                logger.error(
+                    f"❌ Recognition service did not return a dict. "
+                    f"Got: {type(recognition_result_dict)}"
+                )
+                # Fallback to a default dict structure or handle error appropriately
+                recognition_result_dict = {}
 
-            if recognition_result.matches:
-                face_result.matches = recognition_result.matches
 
-            if recognition_result.best_match:
-                face_result.best_match = recognition_result.best_match
+            # Update FaceResult with recognition details
+            face_result.query_embedding = recognition_result_dict.get("query_embedding")
+            face_result.matches = recognition_result_dict.get("matches", [])
+            face_result.best_match = recognition_result_dict.get("best_match")
+            face_result.recognition_model = config.recognition_model
+            face_result.recognition_time = recognition_result_dict.get(
+                "processing_time", 0.0
+            )
+            face_result.embedding_time = recognition_result_dict.get(
+                "embedding_time", 0.0
+            )
 
-            # เพิ่ม metadata
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error recognizing single face ({face_result.face_id}): {e}",
+                exc_info=True,
+            )
+            # Ensure metadata is initialized even on error
             if not face_result.analysis_metadata:
                 face_result.analysis_metadata = {}
-
-            face_result.analysis_metadata.update(
-                {
-                    "recognition_processing_time": recognition_result.processing_time,
-                    "embedding_time": recognition_result.embedding_time,
-                    "search_time": recognition_result.search_time,
-                    "total_candidates": recognition_result.total_candidates,
-                }
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Single face recognition failed: {e}")
+            face_result.analysis_metadata["recognition_error"] = str(e)
 
     async def _create_recognition_only_result(
-        self, image: np.ndarray, recognition_result
-    ) -> Optional[FaceResult]:
-        """สร้าง FaceResult สำหรับ recognition-only mode"""
-        try:
-            if not recognition_result:
-                return None
-
-            # Create a dummy bbox for the entire image
-            h, w = image.shape[:2]
-
-            # Import BoundingBox if needed
-            try:
-                from ..face_detection.utils import BoundingBox
-
-                dummy_bbox = BoundingBox(x1=0, y1=0, x2=w, y2=h, confidence=1.0)
-            except ImportError:
-                # Create a simple bbox-like object
-                class DummyBBox:
-                    def __init__(self):
-                        self.x1, self.y1, self.x2, self.y2 = 0, 0, w, h
-                        self.confidence = 1.0
-
-                dummy_bbox = DummyBBox()
-
-            face_result = FaceResult(
-                bbox=dummy_bbox,
-                confidence=1.0,
-                quality_score=recognition_result.query_embedding.quality_score
-                if recognition_result.query_embedding
-                else 50.0,
-                face_id="face_001",
-                embedding=recognition_result.query_embedding,
-                matches=recognition_result.matches,
-                best_match=recognition_result.best_match,
-                processing_time=recognition_result.processing_time,
-                model_used=recognition_result.model_used.value
-                if recognition_result.model_used
-                else "unknown",
+        self, image: np.ndarray, recognition_output: Dict[str, Any]
+    ) -> Optional[Union[FaceResult, List[FaceResult]]]:
+        """
+        Creates FaceResult(s) from the output of recognize_faces in
+        RECOGNITION_ONLY mode.
+        This method now expects the direct dictionary output from recognize_faces.
+        It might return a single FaceResult or a list if multiple faces were
+        processed by recognize_faces.
+        """
+        if not recognition_output or not recognition_output.get("success"):
+            self.logger.warning(
+                "Skipping result creation due to unsuccessful recognition output."
             )
-
-            return face_result
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to create recognition-only result: {e}")
             return None
 
-    def _extract_face_crop(self, image: np.ndarray, bbox) -> Optional[np.ndarray]:
+        # If recognize_faces processed multiple sub-images/faces and returns a
+        # list of results (e.g., if it internally handled multiple detected
+        # faces from a single input image bytes)
+        # For now, assume recognize_faces returns a single primary result for
+        # the given image_bytes. If it can return multiple, this logic needs to adapt.
+
+        face_id = recognition_output.get("face_id", f"rec_face_{int(time.time())}")
+        bbox_data = recognition_output.get("bbox") # Might be None
+        # Assume high confidence if not provided
+        confidence = recognition_output.get("confidence", 1.0)
+        quality_score = recognition_output.get("quality_score", 0.0)
+        embedding_data = recognition_output.get("embedding")
+        matches_data = recognition_output.get("matches", [])
+        best_match_data = recognition_output.get("best_match")
+        model_used = recognition_output.get("model_used")
+        proc_time = recognition_output.get("processing_time", 0.0)
+        emb_time = recognition_output.get("embedding_time", 0.0)
+        search_time = recognition_output.get("search_time", 0.0)
+
+        if bbox_data:
+            bbox = BoundingBox(
+                x1=bbox_data[0],
+                y1=bbox_data[1],
+                x2=bbox_data[2],
+                y2=bbox_data[3],
+                confidence=float(
+                    recognition_output.get("detection_confidence", confidence)
+                ),
+            )
+        else:
+            # Placeholder for the whole image if no specific bbox
+            h, w = image.shape[:2]
+            bbox = BoundingBox(x1=0, y1=0, x2=w, y2=h, confidence=confidence)
+
+        face_result = FaceResult(
+            face_id=face_id,
+            bbox=bbox,
+            confidence=float(confidence),
+            quality_score=float(quality_score),
+            embedding=embedding_data,
+            matches=matches_data,
+            best_match=best_match_data,
+            model_used=model_used,
+            processing_time=proc_time,
+            analysis_metadata={
+                "recognition_processing_time": proc_time,
+                "embedding_time": emb_time,
+                "search_time": search_time,
+                "source": "recognition_only_mode",
+            },
+            has_identity=bool(matches_data)
+        )
+
+        return face_result
+
+    def _extract_face_crop(
+        self, image: np.ndarray, bbox_data: Any, margin_pixels: int = 10
+    ) -> Optional[np.ndarray]:
         """ตัดใบหน้าจากรูปภาพ"""
         try:
-            # ขยาย bbox เล็กน้อยเพื่อให้ได้ context
-            h, w = image.shape[:2]
-
-            # คำนวณการขยาย (15% ของขนาดหน้า)
-            face_w = bbox.x2 - bbox.x1
-            face_h = bbox.y2 - bbox.y1
-
-            expand_w = int(face_w * 0.15)
-            expand_h = int(face_h * 0.15)
-
-            # ขยาย bbox
-            x1 = max(0, int(bbox.x1 - expand_w))
-            y1 = max(0, int(bbox.y1 - expand_h))
-            x2 = min(w, int(bbox.x2 + expand_w))
-            y2 = min(h, int(bbox.y2 + expand_h))
-
-            # ตัดใบหน้า
-            face_crop = image[y1:y2, x1:x2]
-
-            if face_crop.size == 0:
+            # Ensure bbox_data is BoundingBox or has x1, y1, x2, y2
+            if not hasattr(bbox_data, 'x1') or not hasattr(bbox_data, 'y1') or \
+               not hasattr(bbox_data, 'x2') or not hasattr(bbox_data, 'y2'):
+                self.logger.warning(f"Invalid bbox_data for crop: {bbox_data}")
                 return None
 
-            # แปลงจาก BGR เป็น RGB สำหรับ face recognition
-            if len(face_crop.shape) == 3:
-                face_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-            else:
-                face_rgb = face_crop
+            x1, y1, x2, y2 = (
+                int(bbox_data.x1),
+                int(bbox_data.y1),
+                int(bbox_data.x2),
+                int(bbox_data.y2),
+            )
+            img_h, img_w = image.shape[:2]
 
-            return face_rgb
+            # Add margin, ensuring bounds are within image dimensions
+            x1_m = max(0, x1 - margin_pixels)
+            y1_m = max(0, y1 - margin_pixels)
+            x2_m = min(img_w, x2 + margin_pixels)
+            y2_m = min(img_h, y2 + margin_pixels)
 
+            if x1_m >= x2_m or y1_m >= y2_m:
+                self.logger.warning(
+                    f"Invalid crop dimensions after margin: "
+                    f"({x1_m},{y1_m}) to ({x2_m},{y2_m})"
+                )
+                # Fallback to original bbox if margin makes it invalid
+                # (though return_exceptions=True should prevent this)
+                x1_m, y1_m, x2_m, y2_m = x1, y1, x2, y2
+                if x1_m >= x2_m or y1_m >= y2_m: # Still invalid
+                     return None
+
+
+            face_crop = image[y1_m:y2_m, x1_m:x2_m]
+
+            if face_crop.size == 0:
+                self.logger.warning(
+                    f"Empty face crop extracted for bbox: {bbox_data} "
+                    f"from image shape {image.shape}"
+                )
+                return None
+            return face_crop
         except Exception as e:
-            self.logger.error(f"❌ Failed to extract face crop: {e}")
+            self.logger.error(f"❌ Error extracting face crop: {e}", exc_info=True)
             return None
 
-    async def compare_faces(
-        self,
-        face_image1: np.ndarray,
-        face_image2: np.ndarray,
-        model_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        เปรียบเทียบใบหน้า 2 ใบ
-        """
-        start_time = time.time()
-
-        try:
-            if not self.face_recognition_service:
-                raise RuntimeError("Face recognition service not available")
-
-            # สกัด embeddings
-            embedding1 = await self.face_recognition_service.extract_embedding(
-                face_image1, model_name
-            )
-            embedding2 = await self.face_recognition_service.extract_embedding(
-                face_image2, model_name
-            )
-
-            if not embedding1 or not embedding2:
-                return {
-                    "success": False,
-                    "error": "Failed to extract embeddings",
-                    "processing_time": time.time() - start_time,
-                }
-
-            # เปรียบเทียบ
-            comparison_result = self.face_recognition_service.compare_faces(
-                embedding1.vector, embedding2.vector, embedding1.model_used
-            )
-
-            processing_time = time.time() - start_time
-
-            return {
-                "success": True,
-                "comparison": comparison_result.to_dict(),
-                "embedding1": embedding1.to_dict(),
-                "embedding2": embedding2.to_dict(),
-                "processing_time": processing_time,
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ Face comparison failed: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "processing_time": time.time() - start_time,
-            }
-
-    async def batch_analyze(
-        self,
-        images: List[np.ndarray],
-        config: AnalysisConfig,
-        gallery: Optional[Dict[str, Any]] = None,
-    ) -> BatchAnalysisResult:
-        """
-        วิเคราะห์หลายรูปพร้อมกัน
-        """
-        start_time = time.time()
-
-        try:
-            # สร้าง tasks สำหรับแต่ละรูป
-            analysis_tasks = []
-            for i, image in enumerate(images):
-                task = self.analyze_faces(image, config, gallery)
-                analysis_tasks.append(task)
-
-            # ประมวลผลแบบ parallel
-            results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
-
-            # กรองผลลัพธ์ที่สำเร็จ
-            valid_results: List[FaceAnalysisResult] = []
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    self.logger.warning(f"⚠️ Analysis failed for image {i}: {result}")
-                else:
-                    valid_results.append(result)
-
-            # สรุปผลลัพธ์
-            total_faces = sum(len(result.faces) for result in valid_results)
-
-            # นับ unique identities
-            all_identities = set()
-            for result in valid_results:
-                for face in result.faces:
-                    if face.has_identity:
-                        all_identities.add(face.identity)
-
-            processing_time = time.time() - start_time
-
-            return BatchAnalysisResult(
-                results=valid_results,
-                total_images=len(images),
-                total_faces=total_faces,
-                total_identities=len(all_identities),
-                processing_time=processing_time,
-                batch_metadata={
-                    "config_used": config.to_dict(),
-                    "gallery_size": len(gallery) if gallery else 0,
-                    "parallel_processing": config.parallel_processing,
-                },
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Batch analysis failed: {e}")
-            return BatchAnalysisResult(
-                results=[],
-                total_images=len(images),
-                total_faces=0,
-                total_identities=0,
-                processing_time=time.time() - start_time,
-                batch_metadata={"error": str(e)},
-            )
-
-    async def detect_and_recognize(
-        self,
-        image: np.ndarray,
-        known_faces: Dict[str, np.ndarray],
-        config: Optional[AnalysisConfig] = None,
-    ) -> FaceAnalysisResult:
-        """
-        ตรวจจับและจดจำใบหน้าในขั้นตอนเดียว (Simplified API)
-        """
-        if config is None:
-            config = AnalysisConfig(
-                mode=AnalysisMode.FULL_ANALYSIS,
-                enable_gallery_matching=True,
-                use_quality_based_selection=True,
-                quality_level=QualityLevel.BALANCED,
-            )
-
-        # แปลง known_faces เป็น gallery format
-        gallery = {}
-        for identity_id, embedding in known_faces.items():
-            gallery[identity_id] = {"name": identity_id, "embeddings": [embedding]}
-
-        return await self.analyze_faces(image, config, gallery)
-
-    def _update_stats(self, result: FaceAnalysisResult):
-        """อัปเดต statistics"""
+    def _update_stats(self, result: FaceAnalysisResult) -> None:
+        """อัปเดตสถิติการทำงาน"""
         self.stats["total_analyses"] += 1
         self.stats["total_faces_detected"] += result.total_faces
         self.stats["total_faces_recognized"] += result.identified_faces
         self.stats["processing_times"].append(result.total_time)
-        self.stats["detection_times"].append(result.detection_time)
-        self.stats["recognition_times"].append(result.recognition_time)
+        self.stats["success_rates"].append(1 if result.success else 0)
+        if result.detection_time > 0:
+            self.stats["detection_times"].append(result.detection_time)
+        if result.recognition_time > 0:
+            self.stats["recognition_times"].append(result.recognition_time)
 
-        if result.usable_faces > 0:
-            success_rate = result.identified_faces / result.usable_faces
-            self.stats["success_rates"].append(success_rate)
+    def get_service_info(self) -> Dict[str, Any]:
+        """ดึงข้อมูลเกี่ยวกับ service และ model ที่ใช้"""
+        detection_models = []
+        if self.face_detection_service:
+            detection_models = (
+                self.face_detection_service.get_available_models()
+            ) # Use the correct method
+
+        recognition_models = []
+        if self.face_recognition_service:
+            recognition_models = (
+                self.face_recognition_service.get_available_models()
+            ) # Use the correct method
+
+        return {
+            "service_name": "FaceAnalysisService",
+            "version": "1.1.0", # Example version
+            "description": "Comprehensive face detection and recognition service.",
+            "available_modes": [mode.value for mode in AnalysisMode],
+            "available_quality_levels": [ql.value for ql in QualityLevel],
+            "detection_service": {
+                "available": self.face_detection_service is not None,
+                "models": detection_models,
+            },
+            "recognition_service": {
+                "available": self.face_recognition_service is not None,
+                "models": recognition_models,
+            },
+            "current_config_defaults": self.config, # Assuming config is serializable
+        }
 
     def get_performance_stats(self) -> Dict[str, Any]:
-        """ดึงสถิติประสิทธิภาพ"""
-        stats = self.stats.copy()
+        """ดึงสถิติการทำงานของ service"""
+        # Calculate average times, handling potential division by zero
+        avg_processing_time = (
+            sum(self.stats["processing_times"]) / len(self.stats["processing_times"])
+            if self.stats["processing_times"]
+            else 0
+        )
+        avg_detection_time = (
+            sum(self.stats["detection_times"]) / len(self.stats["detection_times"])
+            if self.stats["detection_times"]
+            else 0
+        )
+        avg_recognition_time = (
+            sum(self.stats["recognition_times"]) / len(self.stats["recognition_times"])
+            if self.stats["recognition_times"]
+            else 0
+        )
+        success_rate = (
+            sum(self.stats["success_rates"]) / len(self.stats["success_rates"])
+            if self.stats["success_rates"]
+            else 0
+        )
 
-        if self.stats["processing_times"]:
-            stats["average_processing_time"] = np.mean(self.stats["processing_times"])
-            stats["total_processing_time"] = sum(self.stats["processing_times"])
+        return {
+            "total_analyses": self.stats["total_analyses"],
+            "total_faces_detected": self.stats["total_faces_detected"],
+            "total_faces_recognized": self.stats["total_faces_recognized"],
+            "average_processing_time_ms": avg_processing_time * 1000,
+            "average_detection_time_ms": avg_detection_time * 1000,
+            "average_recognition_time_ms": avg_recognition_time * 1000,
+            "success_rate_percent": success_rate * 100,
+            "detection_model_stats": self.face_detection_service.get_performance_stats()
+            if self.face_detection_service
+            else {},
+            "recognition_model_stats":
+                self.face_recognition_service.get_performance_stats()
+                if self.face_recognition_service
+                else {},
+        }
 
-        if self.stats["detection_times"]:
-            stats["average_detection_time"] = np.mean(self.stats["detection_times"])
-
-        if self.stats["recognition_times"]:
-            stats["average_recognition_time"] = np.mean(self.stats["recognition_times"])
-
-        if self.stats["success_rates"]:
-            stats["average_success_rate"] = np.mean(self.stats["success_rates"])
-
-        # Add sub-service stats
+    async def shutdown(self) -> None:
+        """Shutdown the service and release resources."""
+        self.logger.info("Shutting down Face Analysis Service...")
         if self.face_detection_service:
-            stats["detection_service_stats"] = (
-                self.face_detection_service.get_performance_stats()
-            )
-
+            await self.face_detection_service.shutdown()
+            self.logger.info("Face Detection Service shut down.")
         if self.face_recognition_service:
-            recognition_stats = (
-                self.face_recognition_service.get_performance_stats().to_dict()
-            )
-            stats["recognition_service_stats"] = recognition_stats
+            await self.face_recognition_service.shutdown()
+            self.logger.info("Face Recognition Service shut down.")
+        self.logger.info("Face Analysis Service shut down successfully.")
 
-        return stats
 
-    async def get_available_models(self) -> Dict[str, Any]:
-        """ดึงรายการโมเดลที่มีอยู่"""
-        try:
-            available_vram = (
-                await self.vram_manager.get_available_memory()
-                if self.vram_manager
-                else 0
-            )
+async def main_test():
+    # This is a placeholder for testing the service directly.
+    # In a real application, this would be part of a larger system.
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Starting FaceAnalysisService test...")
 
-            result = {
-                "available_vram_mb": available_vram / (1024 * 1024)
-                if available_vram
-                else 0,
-                "detection_models": {},
-                "recognition_models": {},
-                "recommendations": {},
+    # Mock VRAMManager and config for testing
+    class MockVRAMManager:
+        def request_vram(self, amount: int, task_id: str) -> bool:
+            logger.info(f"VRAM request: {amount}MB for {task_id}")
+            return True
+
+        def release_vram(self, amount: int, task_id: str) -> None:
+            logger.info(f"VRAM release: {amount}MB for {task_id}")
+
+    mock_vram_manager = MockVRAMManager()
+    mock_config = {
+        "detection": {
+            "preferred_model": "yolov8n_face",
+            "confidence_threshold": 0.5,
+            "iou_threshold": 0.4,
+        },
+        "recognition": {
+            "preferred_model": "facenet",
+            "similarity_threshold": 0.6,
+        },
+    }
+
+    service = FaceAnalysisService(mock_vram_manager, mock_config)
+    initialized = await service.initialize()
+
+    if not initialized:
+        logger.error("Service initialization failed. Exiting test.")
+        return
+
+    # Example: Load an image (replace with actual image path)
+    try:
+        # Create a dummy image for testing if no image is available
+        test_image_np = np.zeros((600, 800, 3), dtype=np.uint8)
+        cv2.putText(
+            test_image_np,
+            "Test Image",
+            (50, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (255, 255, 255),
+            2,
+        )
+        # Simulate a face for detection (simple rectangle)
+        cv2.rectangle(test_image_np, (100, 100), (200, 200), (0, 255, 0), 2)
+
+        logger.info(f"Test image shape: {test_image_np.shape}")
+
+        # Test with DETECTION_ONLY mode
+        analysis_config_detection = AnalysisConfig(
+            mode=AnalysisMode.DETECTION_ONLY,
+            detection_model="yolov8n_face", # Example model
+            confidence_threshold=0.5,
+        )
+        logger.info(
+            f"Analyzing with config (detection): {analysis_config_detection.to_dict()}"
+        )
+        result_detection = await service.analyze_faces(
+            test_image_np, analysis_config_detection
+        )
+        logger.info(f"Detection Result: {result_detection.to_dict()}")
+
+        # Test with FULL_ANALYSIS mode (requires a gallery, mock for now)
+        mock_gallery = {
+            "person1_embedding_id": {
+                "person_id": "person1",
+                "name": "Person One",
+                # Mock embedding vector (ensure correct dimension for your model)
+                "vector": list(np.random.rand(512)),
+                "model_type": "facenet", # Match the model used for gallery creation
             }
+        }
+        analysis_config_full = AnalysisConfig(
+            mode=AnalysisMode.FULL_ANALYSIS,
+            detection_model="yolov8n_face",
+            recognition_model="facenet", # Example model
+            enable_gallery_matching=True,
+        )
+        logger.info(
+            f"Analyzing with config (full): {analysis_config_full.to_dict()}"
+        )
+        result_full = await service.analyze_faces(
+            test_image_np, analysis_config_full, gallery=mock_gallery
+        )
+        logger.info(f"Full Analysis Result: {result_full.to_dict()}")
 
-            # Detection models
-            if self.face_detection_service:
-                service_info = await self.face_detection_service.get_service_info()
-                result["detection_models"] = service_info.get("model_info", {})
+    except FileNotFoundError:
+        logger.error("Test image not found. Please provide a valid image path.")
+    except Exception as e:
+        logger.error(f"An error occurred during testing: {e}", exc_info=True)
+    finally:
+        await service.shutdown()
+        logger.info("FaceAnalysisService test finished.")
 
-            # Recognition models
-            if self.face_recognition_service:
-                # Add model information
-                # Consider fetching this from the service if it becomes dynamic
-                result["recognition_models"] = {
-                    "facenet": {"embedding_size": 512, "input_size": [160, 160]},
-                    "adaface": {"embedding_size": 512, "input_size": [112, 112]},
-                    "arcface": {"embedding_size": 512, "input_size": [112, 112]},
-                }
 
-            return result
-
-        except Exception as e:
-            self.logger.error(f"❌ Error getting available models: {e}")
-            return {"error": str(e)}
-
-    async def switch_models(
-        self,
-        detection_model: Optional[str] = None,
-        recognition_model: Optional[str] = None,
-    ) -> Dict[str, bool]:
-        """เปลี่ยนโมเดลที่ใช้งาน"""
-        results = {}
-
-        try:
-            if detection_model and self.face_detection_service:
-                # Detection models are selected dynamically, not switched here.
-                results["detection"] = True  # Placeholder
-                self.logger.info(
-                    f"Detection model preference set to: {detection_model}"
-                )
-            elif detection_model:
-                results["detection"] = False
-
-            if recognition_model and self.face_recognition_service:
-                success = await self.face_recognition_service.switch_model(
-                    recognition_model
-                )
-                results["recognition"] = success
-            elif recognition_model:
-                results["recognition"] = False
-
-        except Exception as e:
-            self.logger.error(f"❌ Error switching models: {e}")
-            if detection_model:
-                results["detection"] = False
-            if recognition_model:
-                results["recognition"] = False
-
-        return results
-
-    async def cleanup(self):
-        """ทำความสะอาดทรัพยากร"""
-        try:
-            self.logger.info("🧹 Cleaning up Face Analysis Service...")
-
-            if self.face_detection_service:
-                await self.face_detection_service.cleanup()
-                self.logger.info("✅ Face detection service cleaned up")
-
-            if self.face_recognition_service:
-                await self.face_recognition_service.cleanup()
-                self.logger.info("✅ Face recognition service cleaned up")
-
-            # Clear statistics
-            self.stats = {
-                "total_analyses": 0,
-                "total_faces_detected": 0,
-                "total_faces_recognized": 0,
-                "processing_times": [],
-                "success_rates": [],
-                "detection_times": [],
-                "recognition_times": [],
-            }
-
-            self.logger.info("✅ Face Analysis Service cleaned up")
-
-        except Exception as e:
-            self.logger.error(f"❌ Cleanup failed: {e}")
-
-    def create_gallery_from_embeddings(
-        self, embeddings_dict: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        สร้าง Gallery จาก embeddings dictionary
-        """
-        gallery = {}
-        for identity_id, data in embeddings_dict.items():
-            gallery[identity_id] = {
-                "name": data.get("name", identity_id),
-                "embeddings": data.get("embeddings", []),
-            }
-        return gallery
+if __name__ == "__main__":
+    asyncio.run(main_test())
