@@ -319,6 +319,83 @@ class FaceRecognitionService:
             self.logger.error(f"❌ Model validation failed: {e}")
             return False
 
+    def _get_actual_embedding_size(self) -> int:
+        """Run a dummy input through the model to get the actual embedding size."""
+        if not self.current_model or not self.current_model_type:
+            self.logger.error("❌ Model not loaded, cannot determine embedding size.")
+            return 0
+
+        model_config = self.model_configs[self.current_model_type]
+        input_size = cast(Tuple[int, int], model_config["input_size"])
+
+        # Create a dummy input tensor
+        dummy_input = np.random.rand(
+            1, 3, input_size[0], input_size[1]
+        ).astype(np.float32)
+
+        input_name = self.current_model.get_inputs()[0].name
+
+        try:
+            output = self.current_model.run(None, {input_name: dummy_input})
+            embedding_size = cast(int, output[0].shape[-1]) # Explicitly cast to int
+            self.logger.info(
+                f"✅ Actual embedding size for {self.current_model_type.value} "
+                f"determined: {embedding_size}"
+            )
+            return embedding_size
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error running dummy input for {self.current_model_type.value}: {e}"
+            )
+            return 0
+
+    def _validate_model_output_shape(self, model_type: RecognitionModel) -> int:
+        """Validate the model output shape and determine embedding size."""
+        if not self.current_model:
+            self.logger.error("❌ Model not loaded, cannot validate output shape.")
+            return 0
+
+        outputs = self.current_model.get_outputs()
+        if not outputs:
+            self.logger.error(f"❌ No outputs found for model {model_type.value}")
+            return 0
+
+        output_shape = outputs[0].shape
+        self.logger.debug(f"Output shape for {model_type.value}: {output_shape}")
+
+        # Check for dynamic dimensions (None or string)
+        if any(isinstance(dim, str) or dim is None for dim in output_shape):
+            self.logger.info(
+                f"⚠️ Dynamic output dimension detected for {model_type.value}. "
+                f"Attempting to determine actual size."
+            )
+            # If the model is FaceNet and has dynamic output, get actual size
+            if model_type == RecognitionModel.FACENET:
+                return self._get_actual_embedding_size()
+            else:
+                # For other models with dynamic output, we might need specific handling
+                # or rely on a default/configured value if runtime check is not
+                # feasible. For now, log a warning and use configured size.
+                configured_size = cast(
+                    int, self.model_configs[model_type].get("embedding_size", 0)
+                )
+                self.logger.warning(
+                    f"⚠️ Dynamic output for {model_type.value} but not FaceNet. "
+                    f"Using configured embedding size: {configured_size}. "
+                    f"Consider implementing specific runtime checks if needed."
+                )
+                return configured_size
+
+        # Assuming the last dimension is the embedding size for fixed shapes
+        if len(output_shape) > 1 and isinstance(output_shape[-1], int):
+            return output_shape[-1]
+
+        self.logger.warning(
+            f"⚠️ Could not determine embedding size from output shape {output_shape} "
+            f"for {model_type.value}. Using configured size."
+        )
+        return cast(int, self.model_configs[model_type].get("embedding_size", 0))
+
     async def load_model(self, model_type: RecognitionModel) -> bool:
         """Load face recognition model with GPU optimization"""
         if (
@@ -358,6 +435,20 @@ class FaceRecognitionService:
         self.current_model = new_session
         self.current_model_type = model_type
         self._log_model_success(model_type)
+
+        # Validate and update embedding size
+        actual_embedding_size = self._validate_model_output_shape(model_type)
+        if actual_embedding_size > 0:
+            self.model_configs[model_type]["embedding_size"] = actual_embedding_size
+            self.logger.info(
+                f"Updated embedding size for {model_type.value} to "
+                f"{actual_embedding_size}"
+            )
+        else:
+            self.logger.warning(
+                f"Could not determine actual embedding size for {model_type.value}. "
+                f"Using configured value."
+            )
 
         if self.vram_manager:
             self.logger.info(f"Requesting VRAM allocation for {model_type.value}")
@@ -684,13 +775,11 @@ class FaceRecognitionService:
                 # Optionally log a warning or handle zero vector
                 self.logger.warning("Embedding 1 has near-zero norm.")
 
-
             if norm2 > 1e-8:
                 embedding2_normalized = embedding2 / norm2
             else:
                 # Optionally log a warning or handle zero vector
                 self.logger.warning("Embedding 2 has near-zero norm.")
-
 
             # Calculate cosine similarity
             dot_product = np.dot(embedding1_normalized, embedding2_normalized)
@@ -740,7 +829,6 @@ class FaceRecognitionService:
         if self.current_model_type is None:
             self.logger.error("❌ Current model type not set for gallery search.")
             return matches
-
 
         for person_id, person_data in gallery.items():
             max_similarity = 0.0
