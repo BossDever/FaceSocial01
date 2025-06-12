@@ -199,199 +199,181 @@ async def initialize_services(app: FastAPI, settings: Any) -> bool:
         logger.info("✅ VRAM Manager initialized")
 
         # Initialize core services
-        core_services_to_init = [
-            (
-                FACE_DETECTION_SERVICE,
-                FaceDetectionService,
-                settings.detection_config
+        services_to_init = {
+            FACE_DETECTION_SERVICE: (
+                FaceDetectionService, settings.face_detection_config
             ),
-            (
-                FACE_RECOGNITION_SERVICE,
-                FaceRecognitionService,
-                settings.recognition_config
+            FACE_RECOGNITION_SERVICE: (
+                FaceRecognitionService, settings.face_recognition_config
             ),
-        ]
-        for name, cls, cfg in core_services_to_init:
-            if not await _initialize_single_service(app, name, cls, vram_manager, cfg):
-                return False # Critical failure if a core service fails
+            FACE_ANALYSIS_SERVICE: (
+                FaceAnalysisService, settings.face_analysis_config
+            ),
+        }
 
-        # Initialize Face Analysis Service (dependent on others)
-        if all(hasattr(app.state, key) for key in [
-            VRAM_MANAGER_SERVICE, FACE_DETECTION_SERVICE, FACE_RECOGNITION_SERVICE
-        ]): # Shortened line
-            if not await _initialize_single_service(
-                app, FACE_ANALYSIS_SERVICE, FaceAnalysisService,
-                vram_manager, settings.analysis_config
-            ):
-                logger.warning(
-                    "Face Analysis Service failed to initialize, proceeding without it."
+        init_tasks = []
+        for service_name, (service_class, service_config) in services_to_init.items():
+            init_tasks.append(
+                _initialize_single_service(
+                    app, service_name, service_class, vram_manager, service_config
                 )
-                # Not returning False, as it might be non-critical
-        else:
-            logger.warning(
-                "⚠️ Face Analysis Service not initialized due to missing dependencies."
             )
+        
+        results = await asyncio.gather(*init_tasks)
+        if not all(results):
+            logger.error("❌ One or more services failed to initialize.")
+            return False
 
-        initialized_count = sum(
-            1 for key in ALL_SERVICE_KEYS if hasattr(app.state, key)
-        )
-        logger.info(f"🎉 {initialized_count} services initialized successfully!")
+        logger.info("✅ All services initialized successfully.")
         return True
 
     except Exception as e:
-        logger.error(f"❌ Service initialization error: {e}", exc_info=True)
+        logger.exception(f"❌ Critical error during service initialization: {e}")
         return False
 
-async def _cleanup_single_service(app: FastAPI, service_name: str) -> None:
-    """Helper function to cleanup a single service."""
-    service = getattr(app.state, service_name, None)
-    if service and hasattr(service, 'cleanup') and callable(service.cleanup):
-        try:
-            coro = service.cleanup()
-            if asyncio.iscoroutine(coro):
-                # Await coro or create task if needed for gather elsewhere
-                await coro
-                logger.info(f"Async cleanup for {service_name} completed.")
-            else:
-                logger.info(f"Synchronous cleanup for {service_name} completed.")
-            logger.info(f"✅ {service_name} cleanup initiated/completed.")
-        except Exception as e:
-            logger.error(f"❌ Error during {service_name} cleanup: {e}")
+async def shutdown_services(app: FastAPI) -> None:
+    """Gracefully shutdown all services"""
+    logger.info("🔌 Shutting down services...")
+    
+    shutdown_tasks = []
+    for service_key in ALL_SERVICE_KEYS:
+        service = getattr(app.state, service_key, None)
+        if service and hasattr(service, 'shutdown') and callable(service.shutdown):
+            logger.info(f"Shutting down {service_key}...")
+            shutdown_tasks.append(service.shutdown())
+        elif service:
+            logger.info(f"{service_key} does not have a callable shutdown method.")
 
-    if hasattr(app.state, service_name):
-        delattr(app.state, service_name)
-        logger.info(f"✅ {service_name} cleared from app.state.")
-
-async def _cleanup_services(app: FastAPI) -> None:
-    logger.info("🛑 Shutting down services...")
-    # Cleanup in reverse order of initialization
-    for service_name in reversed(ALL_SERVICE_KEYS):
-        await _cleanup_single_service(app, service_name)
-    logger.info("✅ All services cleanup attempted. Shutdown complete.")
+    if shutdown_tasks:
+        await asyncio.gather(*shutdown_tasks, return_exceptions=True)
+        logger.info("✅ Services shut down.")
+    else:
+        logger.info("No services required explicit shutdown.")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan manager for service initialization and cleanup."""
-    logger.info("🚀 Starting Face Recognition System...")
+    """Manage application lifespan events (startup and shutdown)."""
     settings = get_settings()
+    app.state.settings = settings # Store settings in app.state
 
-    try:
-        if await initialize_services(app, settings):
-            logger.info("✅ Startup complete - ready to serve requests")
-        else:
-            logger.error("❌ Startup failed - some services unavailable")
-        yield
-    except Exception as e:
-        logger.error(f"❌ Lifespan startup error: {e}", exc_info=True)
-        yield # Ensure yield for cleanup even if startup fails
-    finally:
-        await _cleanup_services(app)
+    if not await initialize_services(app, settings):
+        logger.critical(
+            "Service initialization failed. Application will not start properly."
+        )
+        # Optionally, raise an exception here to prevent FastAPI from starting
+        # raise RuntimeError("Failed to initialize critical services.")
+    
+    yield  # Application is now running
 
-def _register_routers(app: FastAPI):
-    """Helper function to register API routers."""
-    app.include_router(face_detection_router, prefix="/api", tags=["Face Detection"])
-    app.include_router(
-        face_recognition_router, prefix="/api", tags=["Face Recognition"]
-    )
-    app.include_router(face_analysis_router, prefix="/api", tags=["Face Analysis"])
+    await shutdown_services(app)
 
-def _root_redirect() -> RedirectResponse:
-    """Redirects the root path to the API documentation."""
+
+# Create FastAPI app instance with lifespan management
+app = FastAPI(
+    title="Face Recognition API",
+    description="API for face detection, recognition, and analysis.",
+    version="1.1.0",
+    lifespan=lifespan,
+    exception_handlers={
+        RequestValidationError: _fastapi_native_validation_exception_handler
+    }
+)
+
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+# Include API routers
+app.include_router(face_detection_router, prefix="/api", tags=["Face Detection"])
+app.include_router(face_recognition_router, prefix="/api", tags=["Face Recognition"])
+app.include_router(face_analysis_router, prefix="/api", tags=["Face Analysis"])
+
+
+@app.get("/", include_in_schema=False)
+async def root_redirect() -> RedirectResponse:
     return RedirectResponse(url="/docs")
 
-async def _health_check_handler(request: Request) -> Dict[str, Any]:
-    """Handles the health check endpoint."""
-    s = get_settings()
-    active_services = []
-    for key in USER_FACING_SERVICE_KEYS:
-        if hasattr(request.app.state, key) and \
-           getattr(request.app.state, key) is not None:
-            active_services.append(key.replace("_service", ""))
+@app.get("/health", tags=["System"])
+async def health_check(request: Request) -> Dict[str, Any]:
+    """Perform a health check of the system and its services."""
+    service_statuses: Dict[str, Dict[str, Any]] = {}
+    overall_healthy = True
+    total_services = 0
+    active_services = 0
+
+    for service_key in USER_FACING_SERVICE_KEYS:
+        total_services += 1
+        service_instance = getattr(request.app.state, service_key, None)
+        if service_instance and hasattr(service_instance, 'get_service_info'):
+            try:
+                info = await service_instance.get_service_info()
+                service_statuses[service_key] = {
+                    "status": "healthy",
+                    "details": info
+                }
+                active_services +=1
+            except Exception as e:
+                logger.error(f"Error getting info for {service_key}: {e}")
+                service_statuses[service_key] = {
+                    "status": "unhealthy",
+                    "error": str(e)
+                }
+                overall_healthy = False
+        else:
+            service_statuses[service_key] = {
+                "status": "unavailable",
+                "error": "Service not found or does not support get_service_info"
+            }
+            overall_healthy = False
+            
+    # Check VRAM manager separately if it's critical but not user-facing for this check
+    vram_manager = getattr(request.app.state, VRAM_MANAGER_SERVICE, None)
+    if vram_manager and hasattr(vram_manager, 'get_status_report'):
+        service_statuses[VRAM_MANAGER_SERVICE] = {
+            "status": "healthy", # Assuming healthy if get_status_report runs
+            "details": vram_manager.get_status_report()
+        }
+    elif not vram_manager:
+        service_statuses[VRAM_MANAGER_SERVICE] = {
+            "status": "unavailable",
+            "error": "VRAM Manager not found"
+        }
+        overall_healthy = False
+
 
     return {
-        "status": "healthy" if active_services else "degraded",
-        "project": s.project_name,
-        "version": s.version,
-        "services": dict.fromkeys(active_services, "active"),
-        "total_services": len(active_services)
+        "status": "healthy" if overall_healthy else "degraded",
+        "total_services": total_services,
+        "active_services": active_services,
+        "service_details": service_statuses,
+        "system_info": {
+            "python_version": sys.version,
+            "platform": sys.platform,
+            "project_root": str(project_root)
+        }
     }
 
-async def _system_info_handler(request: Request) -> Dict[str, Any]:
-    """Handles the system information endpoint."""
-    s = get_settings()
-    try:
-        vram_manager = getattr(request.app.state, VRAM_MANAGER_SERVICE, None)
-        vram_status = {}
-        if vram_manager and hasattr(vram_manager, "get_vram_status"):
-            vram_status = await vram_manager.get_vram_status()
-
-        loaded_services = []
-        for key in ALL_SERVICE_KEYS:
-            if hasattr(request.app.state, key) and \
-               getattr(request.app.state, key) is not None:
-                loaded_services.append(key.replace("_service", ""))
-
-        return {
-            "system": {
-                "project": s.project_name,
-                "version": s.version,
-                "services_loaded": len(loaded_services)
-            },
-            "vram_status": vram_status,
-            "services": loaded_services
-        }
-    except Exception as e:
-        logger.error(f"System info error: {e}", exc_info=True)
-        return {"error": f"System info error: {str(e)}"}
-
-def _register_event_handlers(app: FastAPI):
-    """Helper function to register event handlers (like root and health)."""
-    app.get("/", include_in_schema=False)(_root_redirect)
-    app.get("/health", tags=["System"])(_health_check_handler)
-    app.get("/system/info", tags=["System"])(_system_info_handler)
-    app.exception_handler(RequestValidationError)(
-        _fastapi_native_validation_exception_handler
-    )
-
-def create_app() -> FastAPI:
-    """Create FastAPI application."""
-    current_settings = get_settings()
-
-    app = FastAPI(
-        title=current_settings.project_name,
-        version=current_settings.version,
-        description=current_settings.description,
-        lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc"
-    )
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=current_settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    _register_routers(app)
-    _register_event_handlers(app)
-    # Note: The custom validation_exception_handler_custom is defined
-    # but not registered by default. The fastapi_native_validation_exception_handler
-    # is registered by _register_event_handlers.
-
-    return app
-
-app = create_app()
-
+# Main entry point
 if __name__ == "__main__":
     settings = get_settings()
-    logger.info(f"🚀 Starting server on {settings.host}:{settings.port}")
+    logger.info(f"Starting server on {settings.server_host}:{settings.server_port}")
+    
+    # Ensure log directory exists
+    log_dir = Path(settings.log_config.get("dir", "logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     uvicorn.run(
-        "src.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.reload,
-        log_level=settings.log_level,
+        "main:app", # Changed from app to "main:app" for reload
+        host=settings.server_host,
+        port=settings.server_port,
+        reload=settings.debug_mode, # Enable reload in debug mode
+        log_level=settings.log_config.get("level", "info").lower(),
+        # workers=settings.server_workers # Consider if multi-worker is needed
     )
