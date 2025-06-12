@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 import numpy as np
 from enum import Enum
+import time
 
 
 class RecognitionModel(Enum):
@@ -17,6 +18,9 @@ class RecognitionModel(Enum):
     ADAFACE = "adaface"
     ARCFACE = "arcface"
     FACENET = "facenet"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 # Alias for backward compatibility
@@ -79,86 +83,111 @@ FaceGallery = Dict[str, Dict[str, Any]]
 class FaceEmbedding:
     """ผลลัพธ์การสกัด embedding vector จากรูปภาพใบหน้า - Enhanced"""
 
+    # Main fields for new system
+    id: str  # Unique ID for this specific embedding instance
+    person_id: str  # ID of the person this embedding belongs to
+    person_name: Optional[str] = None  # Name of the person
     vector: Optional[np.ndarray] = None
+    # Model type used for this embedding
     model_type: Optional[RecognitionModel] = None
+    timestamp: float = field(default_factory=time.time)
     quality_score: float = 0.0
     extraction_time: float = 0.0
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Enhanced fields
     confidence: float = 0.0
     dimension: int = 0
     normalized: bool = False
+    # Method used for extraction (e.g., 'insightface_onnx_adaface')
     extraction_method: str = ""
-
-    # Legacy fields for backward compatibility
-    embedding: Optional[np.ndarray] = field(init=False)
-    model_used: Optional[str] = field(init=False)
-    success: bool = True
-    error: Optional[str] = None
-    processing_time: Optional[float] = field(init=False)
-    face_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
+    source_image_hash: Optional[str] = None  # Hash of the source image
+    # Bounding box of the face in the source image [x1, y1, x2, y2]
+    face_bbox: Optional[List[int]] = None
+    # Landmark points of the face
+    landmarks: Optional[List[List[int]]] = None
 
     def __post_init__(self):
-        # Set legacy fields for backward compatibility
-        self.embedding = self.vector
-        self.model_used = self.model_type.value if self.model_type else None
-        self.processing_time = self.extraction_time
-
-        # Set dimension
         if self.vector is not None:
-            self.dimension = len(self.vector.flatten())
+            self.dimension = self.vector.shape[0]
+            # Example: Check if vector is L2 normalized (sum of squares is close to 1)
+            # This is a common practice for many face recognition models.
+            # Adjust tolerance as needed.
+            if self.dimension > 0:
+                norm_sq = np.sum(np.square(self.vector))
+                self.normalized = np.isclose(norm_sq, 1.0, atol=1e-5)
 
-        # Validate embedding
-        if self.vector is not None:
+        if self.model_type and isinstance(self.model_type, RecognitionModel):
+            # Ensure model_type is stored as its string value if it's an Enum
+            # This was a previous source of issues, ensuring it's handled here.
+            pass # No change needed if it's already RecognitionModel type
+        elif self.model_type and isinstance(self.model_type, str):
             try:
-                # Check for NaN or Inf values
-                if np.any(np.isnan(self.vector)) or np.any(np.isinf(self.vector)):
-                    self.success = False
-                    self.error = "Invalid embedding values (NaN/Inf detected)"
-
-                # Check if normalized
-                norm = np.linalg.norm(self.vector)
-                self.normalized = abs(norm - 1.0) < 1e-5
-
-            except Exception as e:
-                self.success = False
-                self.error = f"Embedding validation failed: {e}"
-
-    def normalize(self) -> "FaceEmbedding":
-        """L2 normalize the embedding vector"""
-        if self.vector is not None:
-            try:
-                norm = np.linalg.norm(self.vector)
-                if norm > 1e-8:
-                    self.vector = self.vector / norm
-                    self.embedding = self.vector  # Update legacy field
-                    self.normalized = True
-            except Exception as e:
-                self.error = f"Normalization failed: {e}"
-        return self
+                # Attempt to convert string back to Enum for consistency internally
+                self.model_type = RecognitionModel(self.model_type)
+            except ValueError:
+                # If string is not valid enum, keep as string or handle.
+                # For now, log warning & keep string if not valid enum member.
+                # This can happen if new model type string not in enum.
+                # Consider error or default if strict enum adherence needed.
+                # print(f"Warn: '{self.model_type}' not valid enum member.")
+                pass # Keep as string if not a valid enum member
 
     def to_dict(self) -> Dict[str, Any]:
-        """แปลงเป็น dictionary สำหรับ JSON serialization"""
-        result = {
-            "model_type": self.model_type.value if self.model_type else None,
-            "quality_score": float(self.quality_score),
-            "extraction_time": float(self.extraction_time),
-            "confidence": float(self.confidence),
-            "dimension": int(self.dimension),
-            "normalized": bool(self.normalized),
+        """Convert to dictionary, handling numpy array serialization."""
+        data = {
+            "id": self.id,
+            "person_id": self.person_id,
+            "person_name": self.person_name,
+            "vector": self.vector.tolist() if self.vector is not None else None,
+            # Ensure model_type is stored as string value for JSON serialization
+            "model_type": str(self.model_type) if self.model_type else None,
+            "timestamp": self.timestamp,
+            "quality_score": self.quality_score,
+            "extraction_time": self.extraction_time,
+            "metadata": self.metadata,
+            "confidence": self.confidence,
+            "dimension": self.dimension,
+            "normalized": self.normalized,
             "extraction_method": self.extraction_method,
-            "success": bool(self.success),
-            "error": self.error,
-            "face_quality": self.face_quality.value,
+            "source_image_hash": self.source_image_hash,
+            "face_bbox": self.face_bbox,
+            "landmarks": self.landmarks,
         }
+        return data
 
-        # Add vector if requested (usually not for API responses due to size)
-        if self.vector is not None:
-            result["vector_shape"] = self.vector.shape
-            result["vector_norm"] = float(np.linalg.norm(self.vector))
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FaceEmbedding":
+        """Create FaceEmbedding from dictionary."""
+        vector = np.array(data["vector"]) if data.get("vector") is not None else None
+        model_type_str = data.get("model_type")
+        model_type_enum: Optional[RecognitionModel] = None
+        if model_type_str:
+            try:
+                model_type_enum = RecognitionModel(model_type_str)
+            except ValueError:
+                # Log or handle if model_type_str not valid enum member
+                # print(f"Warn: '{model_type_str}' from dict not valid enum.")
+                pass # Keep as None or use a default if desired
 
-        return result
+        return cls(
+            id=data["id"],
+            person_id=data["person_id"],
+            person_name=data.get("person_name"),
+            vector=vector,
+            model_type=model_type_enum, # Use the converted enum value
+            timestamp=data.get("timestamp", time.time()),
+            quality_score=data.get("quality_score", 0.0),
+            extraction_time=data.get("extraction_time", 0.0),
+            metadata=data.get("metadata", {}),
+            confidence=data.get("confidence", 0.0),
+            # dimension will be set in __post_init__ if vector is present
+            normalized=data.get("normalized", False),
+            extraction_method=data.get("extraction_method", ""),
+            source_image_hash=data.get("source_image_hash"),
+            face_bbox=data.get("face_bbox"),
+            landmarks=data.get("landmarks"),
+        )
 
 
 @dataclass
@@ -344,10 +373,13 @@ class FaceRecognitionResult:
 
 @dataclass
 class ModelPerformanceStats:
-    """สถิติประสิทธิภาพของโมเดล Face Recognition - Enhanced"""
+    """สถิติประสิทธิภาพของโมเดลการจดจำใบหน้า - Enhanced"""
 
+    model_type: Optional[RecognitionModel] = None
     total_embeddings_extracted: int = 0
-    total_comparisons: int = 0
+    failed_embeddings_count: int = 0  # Corrected attribute name
+    total_recognitions: int = 0
+    successful_recognitions: int = 0
     total_extraction_time: float = 0.0
     total_comparison_time: float = 0.0
     average_extraction_time: float = 0.0

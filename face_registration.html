@@ -37,6 +37,7 @@
             font-size: 2.5rem;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 10px;
         }
@@ -239,6 +240,207 @@
             transition: width 0.3s ease;
         }
 
+        /* Face Quality Display */
+        .face-quality-display {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .quality-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .quality-icon {
+            font-size: 18px;
+        }
+
+        .quality-title {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .quality-score-big {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .quality-bar-container {
+            margin-bottom: 10px;
+        }
+
+        .quality-bar-bg {
+            height: 12px;
+            background: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .quality-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b 0%, #ffd43b 50%, #51cf66 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+
+        .quality-status {
+            text-align: center;
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        /* Registration Progress Panel */
+        .registration-progress-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #28a745;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .progress-header h4 {
+            margin: 0;
+            color: #28a745;
+            font-size: 16px;
+        }
+
+        .btn-cancel {
+            background: none;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: rgba(220, 53, 69, 0.1);
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .progress-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .progress-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .progress-value {
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .progress-bar-container {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .progress-bar-bg {
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-percentage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Registration Steps */
+        .registration-steps {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .step.active {
+            background: #e3f2fd;
+            border-left: 3px solid #2196f3;
+        }
+
+        .step.completed {
+            background: #e8f5e8;
+            border-left: 3px solid #28a745;
+        }
+
+        .step.error {
+            background: #ffebee;
+            border-left: 3px solid #f44336;
+        }
+
+        .step-icon {
+            font-size: 16px;
+            min-width: 20px;
+        }
+
+        .step-text {
+            flex: 1;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .step-status {
+            font-size: 14px;
+        }
+
         .controls {
             display: flex;
             gap: 15px;
@@ -405,6 +607,8 @@
             z-index: 1000;
             transform: translateX(400px);
             transition: transform 0.3s ease;
+            max-width: 350px;
+            line-height: 1.4;
         }
 
         .notification.show {
@@ -554,25 +758,73 @@
                     <canvas id="canvas"></canvas>
                     <div id="cameraStatus" class="status-indicator inactive">Camera Inactive</div>
                     <div id="autoCaptureIndicator" class="auto-capture-indicator">🎯 Position your face in the frame</div>
+                </div>
+
+                <!-- Real-time Face Quality Display -->
+                <div id="faceQualityDisplay" class="face-quality-display" style="display: none;">
+                    <div class="quality-header">
+                        <span class="quality-icon">📊</span>
+                        <span class="quality-title">Face Quality Score</span>
+                    </div>
+                    <div class="quality-score-big" id="currentQualityScore">0%</div>
+                    <div class="quality-bar-container">
+                        <div class="quality-bar-bg">
+                            <div class="quality-bar-fill" id="currentQualityFill"></div>
+                        </div>
+                        <div class="quality-status" id="currentQualityStatus">Position your face properly</div>
+                    </div>
+                </div>
+
+                <!-- Registration Progress Panel -->
+                <div id="registrationProgressPanel" class="registration-progress-panel" style="display: none;">
+                    <div class="progress-header">
+                        <h4>🤖 Auto Registration Progress</h4>
+                        <button id="cancelRegistrationBtn" class="btn-cancel">❌</button>
+                    </div>
                     
-                    <div id="registrationOverlay" class="registration-overlay">
-                        <div class="registration-progress">
-                            <div class="progress-circle">
-                                <svg>
-                                    <circle class="bg" cx="60" cy="60" r="50"></circle>
-                                    <circle id="progressCircle" class="progress" cx="60" cy="60" r="50"></circle>
-                                </svg>
-                                <div id="progressPercentage" class="percentage">0%</div>
-                            </div>
-                            <div id="progressStatus" class="progress-status">Collecting face samples...</div>
-                            <div id="sampleCounter" class="sample-counter">Sample: 0/10</div>
-                            <div class="quality-indicator">
-                                <span>Quality:</span>
-                                <div class="quality-bar">
-                                    <div id="qualityFill" class="quality-fill"></div>
-                                </div>
-                                <span id="qualityScore">0%</span>
-                            </div>
+                    <div class="progress-stats">
+                        <div class="progress-item">
+                            <span class="progress-label">Samples Collected:</span>
+                            <span class="progress-value" id="samplesCollected">0/10</span>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Average Quality:</span>
+                            <span class="progress-value" id="averageQuality">0%</span>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Status:</span>
+                            <span class="progress-value" id="detailedStatus">Ready to start</span>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="overallProgressFill"></div>
+                        </div>
+                        <div class="progress-percentage" id="overallProgressPercentage">0%</div>
+                    </div>
+
+                    <!-- Step-by-step status -->
+                    <div class="registration-steps">
+                        <div class="step" id="step1">
+                            <span class="step-icon">👀</span>
+                            <span class="step-text">Detecting Face</span>
+                            <span class="step-status" id="step1Status">⏳</span>
+                        </div>
+                        <div class="step" id="step2">
+                            <span class="step-icon">🎯</span>
+                            <span class="step-text">Quality Check</span>
+                            <span class="step-status" id="step2Status">⏳</span>
+                        </div>
+                        <div class="step" id="step3">
+                            <span class="step-icon">🧠</span>
+                            <span class="step-text">Extract Embedding</span>
+                            <span class="step-status" id="step3Status">⏳</span>
+                        </div>
+                        <div class="step" id="step4">
+                            <span class="step-icon">💾</span>
+                            <span class="step-text">Save to Database</span>
+                            <span class="step-status" id="step4Status">⏳</span>
                         </div>
                     </div>
                 </div>
@@ -717,6 +969,10 @@
                     <button id="refreshGalleryBtn" class="btn btn-secondary btn-sm">
                         <span>🔄</span> Refresh Gallery
                     </button>
+                    
+                    <button id="checkDatabaseBtn" class="btn btn-secondary btn-sm" style="margin-top: 5px;">
+                        <span>🔍</span> Check Database
+                    </button>
                 </div>
             </div>
         </div>
@@ -787,15 +1043,30 @@
                 // Status elements
                 this.cameraStatus = document.getElementById('cameraStatus');
                 this.autoCaptureIndicator = document.getElementById('autoCaptureIndicator');
-                this.registrationOverlay = document.getElementById('registrationOverlay');
 
-                // Progress elements
-                this.progressCircle = document.getElementById('progressCircle');
-                this.progressPercentage = document.getElementById('progressPercentage');
-                this.progressStatus = document.getElementById('progressStatus');
-                this.sampleCounter = document.getElementById('sampleCounter');
-                this.qualityFill = document.getElementById('qualityFill');
-                this.qualityScore = document.getElementById('qualityScore');
+                // New quality display elements
+                this.faceQualityDisplay = document.getElementById('faceQualityDisplay');
+                this.currentQualityScore = document.getElementById('currentQualityScore');
+                this.currentQualityFill = document.getElementById('currentQualityFill');
+                this.currentQualityStatus = document.getElementById('currentQualityStatus');
+
+                // New registration progress elements
+                this.registrationProgressPanel = document.getElementById('registrationProgressPanel');
+                this.samplesCollected = document.getElementById('samplesCollected');
+                this.averageQuality = document.getElementById('averageQuality');
+                this.detailedStatus = document.getElementById('detailedStatus');
+                this.overallProgressFill = document.getElementById('overallProgressFill');
+                this.overallProgressPercentage = document.getElementById('overallProgressPercentage');
+
+                // Step elements
+                this.step1 = document.getElementById('step1');
+                this.step2 = document.getElementById('step2');
+                this.step3 = document.getElementById('step3');
+                this.step4 = document.getElementById('step4');
+                this.step1Status = document.getElementById('step1Status');
+                this.step2Status = document.getElementById('step2Status');
+                this.step3Status = document.getElementById('step3Status');
+                this.step4Status = document.getElementById('step4Status');
 
                 // Stats elements
                 this.totalRegistered = document.getElementById('totalRegistered');
@@ -834,9 +1105,14 @@
                 this.startRecognitionBtn.addEventListener('click', () => this.startRecognitionMode());
                 this.resetProgressBtn.addEventListener('click', () => this.resetRegistrationProgress());
 
+                // Registration controls
+                document.getElementById('cancelRegistrationBtn').addEventListener('click', () => this.cancelRegistration());
+
                 // Form controls
                 document.getElementById('clearFormBtn').addEventListener('click', () => this.clearForm());
                 document.getElementById('refreshGalleryBtn').addEventListener('click', () => this.loadGallery());
+                document.getElementById('checkDatabaseBtn').addEventListener('click', () => this.checkDatabase());
+                document.getElementById('checkDatabaseBtn').addEventListener('click', () => this.checkDatabaseStatus());
 
                 // Settings
                 this.requiredSamplesSlider.addEventListener('input', (e) => {
@@ -876,6 +1152,10 @@
                 this.currentMode = mode;
                 this.stopProcessing();
                 
+                // Hide all quality displays and progress panels
+                this.faceQualityDisplay.style.display = 'none';
+                this.registrationProgressPanel.style.display = 'none';
+                
                 // Update button states
                 document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
                 
@@ -894,7 +1174,6 @@
                     this.settingsPanel.classList.remove('active');
                     this.startRecognitionBtn.style.display = 'block';
                     this.resetProgressBtn.style.display = 'none';
-                    this.registrationOverlay.classList.remove('active');
                 } else if (mode === 'settings') {
                     this.settingsModeBtn.classList.add('active');
                     this.registrationPanel.style.display = 'none';
@@ -902,7 +1181,6 @@
                     this.settingsPanel.classList.add('active');
                     this.startRecognitionBtn.style.display = 'none';
                     this.resetProgressBtn.style.display = 'none';
-                    this.registrationOverlay.classList.remove('active');
                 }
             }
 
@@ -957,7 +1235,8 @@
                 this.cameraStatus.className = 'status-indicator inactive';
                 this.clearCanvas();
                 this.autoCaptureIndicator.style.display = 'none';
-                this.registrationOverlay.classList.remove('active');
+                this.faceQualityDisplay.style.display = 'none';
+                this.registrationProgressPanel.style.display = 'none';
             }
 
             startRecognitionMode() {
@@ -1049,6 +1328,14 @@
                         if (this.currentMode === 'registration') {
                             this.autoCaptureIndicator.style.display = 'block';
                             this.autoCaptureIndicator.textContent = '🎯 Position your face in the frame';
+                            this.faceQualityDisplay.style.display = 'none';
+                            
+                            // Reset steps when no face detected
+                            if (this.isRegistering) {
+                                this.updateRegistrationStep(1, 'error', '❌');
+                                this.updateRegistrationStep(2, '', '⏳');
+                                this.detailedStatus.textContent = 'No face detected - position properly';
+                            }
                         }
                     }
                     
@@ -1062,10 +1349,14 @@
             async handleRegistrationMode(face, imageData) {
                 this.autoCaptureIndicator.style.display = 'none';
                 
+                // Show face quality display
+                this.faceQualityDisplay.style.display = 'block';
+                
                 // Check if we have a name
                 const name = this.personName.value.trim();
                 if (!name) {
                     this.registrationStatus.textContent = 'Enter name to start';
+                    this.updateQualityDisplay(0, 'Enter person name first');
                     return;
                 }
 
@@ -1073,15 +1364,27 @@
                 const quality = face.quality_score || 0;
                 this.currentFaceQuality = quality;
                 
-                // Start registration process if quality is good enough
+                // Update real-time quality display
+                this.updateQualityDisplay(quality, quality >= this.qualityThreshold ? 
+                    '✅ Quality good - collecting sample' : 
+                    `❌ Quality too low (need ${this.qualityThreshold}%)`);
+                
+                // Update step 1: Face detected
+                this.updateRegistrationStep(1, 'completed', '✅');
+                
+                // Update step 2: Quality check
                 if (quality >= this.qualityThreshold) {
+                    this.updateRegistrationStep(2, 'completed', '✅');
+                    
+                    // Start registration process if not already started
                     if (!this.isRegistering) {
                         this.startRegistrationProcess();
                     }
                     
-                    // Collect sample
+                    // Collect sample with step tracking
                     await this.collectSample(face, imageData);
                 } else {
+                    this.updateRegistrationStep(2, 'error', '❌');
                     this.registrationStatus.textContent = `Improve face position (Quality: ${quality.toFixed(1)}%)`;
                 }
                 
@@ -1128,56 +1431,126 @@
                 }
             }
 
+            updateQualityDisplay(quality, status) {
+                this.currentQualityScore.textContent = `${Math.round(quality)}%`;
+                this.currentQualityFill.style.width = `${quality}%`;
+                this.currentQualityStatus.textContent = status;
+                
+                // Update quality score color
+                if (quality >= 80) {
+                    this.currentQualityScore.style.color = '#28a745';
+                } else if (quality >= this.qualityThreshold) {
+                    this.currentQualityScore.style.color = '#ffc107';
+                } else {
+                    this.currentQualityScore.style.color = '#dc3545';
+                }
+            }
+
+            updateRegistrationStep(stepNum, status, icon) {
+                const step = document.getElementById(`step${stepNum}`);
+                const stepStatus = document.getElementById(`step${stepNum}Status`);
+                
+                // Remove all status classes
+                step.classList.remove('active', 'completed', 'error');
+                
+                // Add new status
+                step.classList.add(status);
+                stepStatus.textContent = icon;
+            }
+
+            resetRegistrationSteps() {
+                for (let i = 1; i <= 4; i++) {
+                    this.updateRegistrationStep(i, '', '⏳');
+                }
+            }
+
+            cancelRegistration() {
+                this.resetRegistrationProgress();
+                this.stopProcessing();
+                this.showNotification('Registration cancelled', 'info');
+            }
+
             startRegistrationProcess() {
                 this.isRegistering = true;
                 this.collectedSamples = [];
                 this.registrationProgress = 0;
-                this.registrationOverlay.classList.add('active');
+                this.registrationProgressPanel.style.display = 'block';
                 this.registrationStatus.textContent = 'Collecting samples...';
                 this.resetProgressBtn.style.display = 'block';
+                this.resetRegistrationSteps();
+                
+                this.detailedStatus.textContent = 'Starting registration process...';
+                this.showNotification('Auto registration started!', 'success');
             }
 
+            // 🔧 FIXED: แก้ไขการส่งข้อมูลเป็น FormData แทน JSON พร้อมติดตาม steps
             async collectSample(face, imageData) {
-                // Extract embedding for this sample
                 try {
+                    // Update step 3: Extract embedding (in progress)
+                    this.updateRegistrationStep(3, 'active', '🔄');
+                    this.detailedStatus.textContent = 'Extracting face embedding...';
+                    
+                    // Convert base64 to blob for FormData
+                    const byteCharacters = atob(imageData);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+                    // Create FormData
+                    const formData = new FormData();
+                    formData.append('file', blob, 'face_sample.jpg');
+                    formData.append('model_name', this.recognitionModel.value);
+
                     const embeddingResponse = await fetch(`${this.apiBaseUrl}/face-recognition/extract-embedding`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            face_image_base64: imageData, // Added image data
-                            model_name: this.recognitionModel.value
-                        })
+                        body: formData
                     });
 
                     if (embeddingResponse.ok) {
-                        const embeddingResult = await embeddingResponse.json(); // Renamed variable
+                        const embeddingResult = await embeddingResponse.json();
+                        
+                        // Update step 3: Embedding extracted successfully
+                        this.updateRegistrationStep(3, 'completed', '✅');
+                        this.detailedStatus.textContent = 'Embedding extracted successfully!';
+                        
                         this.collectedSamples.push({
-                            // Assuming API returns embedding vector in 'vector' and original image in 'face_image_base64'
-                            embedding: embeddingResult.vector, 
+                            embedding: embeddingResult.vector || embeddingResult.embedding,
                             quality: face.quality_score,
                             timestamp: Date.now(),
-                            face_image_base64: embeddingResult.face_image_base64 || imageData // Store image for registration
+                            face_image_base64: imageData
                         });
+
+                        this.showNotification(`Sample ${this.collectedSamples.length} collected!`, 'success');
 
                         // Check if we have enough samples
                         if (this.collectedSamples.length >= this.requiredSamples) {
                             await this.completeRegistration();
                         }
                     } else {
-                        // Added error handling
+                        // Update step 3: Embedding extraction failed
+                        this.updateRegistrationStep(3, 'error', '❌');
                         const errorData = await embeddingResponse.json();
                         console.error('Embedding extraction failed:', errorData);
+                        this.detailedStatus.textContent = 'Embedding extraction failed!';
                         this.showNotification(`Embedding extraction failed: ${errorData.detail || embeddingResponse.statusText}`, 'error');
                     }
                 } catch (error) {
+                    // Update step 3: Error occurred
+                    this.updateRegistrationStep(3, 'error', '❌');
                     console.error('Embedding extraction error:', error);
+                    this.detailedStatus.textContent = 'Embedding extraction error!';
                     this.showNotification(`Embedding extraction error: ${error.message}`, 'error');
                 }
             }
 
             async completeRegistration() {
                 try {
-                    this.progressStatus.textContent = 'Finalizing registration...';
+                    // Update step 4: Save to database (in progress)
+                    this.updateRegistrationStep(4, 'active', '🔄');
+                    this.detailedStatus.textContent = 'Saving to database...';
                     
                     // Use the best quality sample for registration
                     const bestSample = this.collectedSamples.reduce((best, current) => 
@@ -1197,37 +1570,52 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             person_id: this.personName.value.toLowerCase().replace(/\s+/g, '_'),
-                            face_image_base64: bestSample.embedding.face_image_base64 || this.captureImageData(),
+                            face_image_base64: bestSample.face_image_base64,
                             metadata: metadata
                         })
                     });
 
                     if (response.ok) {
-                        this.showNotification(`Successfully registered ${this.personName.value}!`, 'success');
-                        this.progressStatus.textContent = 'Registration completed!';
+                        // Update step 4: Database save successful
+                        this.updateRegistrationStep(4, 'completed', '✅');
+                        this.detailedStatus.textContent = 'Registration completed successfully!';
+                        
+                        this.showNotification(`🎉 Successfully registered ${this.personName.value}!`, 'success');
                         
                         // Update gallery
                         this.gallery[this.personName.value.toLowerCase().replace(/\s+/g, '_')] = {
                             name: this.personName.value,
-                            embeddings: this.collectedSamples.map(s => s.embedding.vector)
+                            embeddings: this.collectedSamples.map(s => s.embedding)
                         };
                         
                         document.getElementById('lastRegistered').textContent = this.personName.value;
                         this.updateGalleryDisplay();
                         
+                        // Show completion notification
+                        this.showNotification(`✅ Registration Summary:
+                        - Name: ${this.personName.value}
+                        - Samples: ${this.collectedSamples.length}
+                        - Avg Quality: ${metadata.average_quality.toFixed(1)}%`, 'success');
+                        
                         // Reset after delay
                         setTimeout(() => {
                             this.resetRegistrationProgress();
                             this.clearForm();
-                        }, 2000);
+                        }, 3000);
                         
                     } else {
+                        // Update step 4: Database save failed
+                        this.updateRegistrationStep(4, 'error', '❌');
                         const error = await response.json();
+                        this.detailedStatus.textContent = 'Database save failed!';
                         throw new Error(error.detail || 'Registration failed');
                     }
                 } catch (error) {
+                    // Update step 4: Error occurred
+                    this.updateRegistrationStep(4, 'error', '❌');
                     console.error('Registration error:', error);
-                    this.showNotification(`Registration failed: ${error.message}`, 'error');
+                    this.detailedStatus.textContent = 'Registration failed!';
+                    this.showNotification(`❌ Registration failed: ${error.message}`, 'error');
                     this.resetRegistrationProgress();
                 }
             }
@@ -1238,22 +1626,28 @@
                 const progress = Math.min((this.collectedSamples.length / this.requiredSamples) * 100, 100);
                 this.registrationProgress = progress;
 
-                // Update progress circle
-                const circumference = 2 * Math.PI * 50;
-                const strokeDashoffset = circumference - (progress / 100) * circumference;
-                this.progressCircle.style.strokeDashoffset = strokeDashoffset;
-                this.progressPercentage.textContent = `${Math.round(progress)}%`;
+                // Update overall progress bar
+                this.overallProgressFill.style.width = `${progress}%`;
+                this.overallProgressPercentage.textContent = `${Math.round(progress)}%`;
 
-                // Update sample counter
-                this.sampleCounter.textContent = `Sample: ${this.collectedSamples.length}/${this.requiredSamples}`;
+                // Update samples collected
+                this.samplesCollected.textContent = `${this.collectedSamples.length}/${this.requiredSamples}`;
 
-                // Update quality indicator
-                this.qualityFill.style.width = `${this.currentFaceQuality}%`;
-                this.qualityScore.textContent = `${Math.round(this.currentFaceQuality)}%`;
+                // Calculate and update average quality
+                if (this.collectedSamples.length > 0) {
+                    const avgQuality = this.collectedSamples.reduce((sum, s) => sum + s.quality, 0) / this.collectedSamples.length;
+                    this.averageQuality.textContent = `${avgQuality.toFixed(1)}%`;
+                } else {
+                    this.averageQuality.textContent = '0%';
+                }
 
                 // Update status
                 if (this.collectedSamples.length < this.requiredSamples) {
-                    this.progressStatus.textContent = `Collecting face samples... (${this.collectedSamples.length}/${this.requiredSamples})`;
+                    this.detailedStatus.textContent = `Collecting samples... (${this.collectedSamples.length}/${this.requiredSamples})`;
+                    this.registrationStatus.textContent = 'Collecting samples...';
+                } else {
+                    this.detailedStatus.textContent = 'All samples collected! Processing...';
+                    this.registrationStatus.textContent = 'Processing registration...';
                 }
             }
 
@@ -1261,182 +1655,84 @@
                 this.isRegistering = false;
                 this.collectedSamples = [];
                 this.registrationProgress = 0;
-                this.registrationOverlay.classList.remove('active');
+                this.registrationProgressPanel.style.display = 'none';
+                this.faceQualityDisplay.style.display = 'none';
                 this.registrationStatus.textContent = 'Ready';
                 this.resetProgressBtn.style.display = 'none';
                 this.autoCaptureIndicator.style.display = this.currentMode === 'registration' ? 'block' : 'none';
-            }
-
-            drawFaceBox(face) {
-                const bbox = face.bbox;
-                const scaleX = this.canvas.width / this.video.videoWidth;
-                const scaleY = this.canvas.height / this.video.videoHeight;
-
-                const x = bbox.x1 * scaleX;
-                const y = bbox.y1 * scaleY;
-                const width = (bbox.x2 - bbox.x1) * scaleX;
-                const height = (bbox.y2 - bbox.y1) * scaleY;
-
-                // Color based on mode and quality
-                let color;
-                if (this.currentMode === 'registration') {
-                    const quality = face.quality_score || 0;
-                    if (quality >= this.qualityThreshold) {
-                        color = '#51cf66'; // Green for good quality
-                    } else {
-                        color = '#ffd43b'; // Yellow for poor quality
-                    }
-                } else {
-                    color = '#667eea'; // Blue for recognition mode
-                }
-
-                // Draw bounding box
-                this.ctx.strokeStyle = color;
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeRect(x, y, width, height);
-
-                // Draw quality indicator for registration mode
-                if (this.currentMode === 'registration') {
-                    const quality = face.quality_score || 0;
-                    const label = `Quality: ${quality.toFixed(1)}%`;
-                    
-                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                    this.ctx.fillRect(x, y - 30, width, 30);
-                    
-                    this.ctx.fillStyle = color;
-                    this.ctx.font = 'bold 14px Arial';
-                    this.ctx.fillText(label, x + 8, y - 8);
-                }
-            }
-
-            drawRecognitionResult(face, name, confidence) {
-                const bbox = face.bbox;
-                const scaleX = this.canvas.width / this.video.videoWidth;
-                const scaleY = this.canvas.height / this.video.videoHeight;
-
-                const x = bbox.x1 * scaleX;
-                const y = bbox.y1 * scaleY;
-                const width = (bbox.x2 - bbox.x1) * scaleX;
-                const height = (bbox.y2 - bbox.y1) * scaleY;
-
-                // Color based on recognition status
-                let color;
-                if (name === 'Unknown' || name === 'Error') {
-                    color = '#ff6b6b'; // Red for unknown
-                } else if (confidence > 0.8) {
-                    color = '#51cf66'; // Green for high confidence
-                } else {
-                    color = '#ffd43b'; // Yellow for medium confidence
-                }
-
-                // Draw bounding box
-                this.ctx.strokeStyle = color;
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeRect(x, y, width, height);
-
-                // Draw name tag
-                const label = name === 'Unknown' ? '❓ Unknown' : `👤 ${name}`;
-                const subLabel = confidence > 0 ? `${(confidence * 100).toFixed(1)}%` : '';
                 
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                const textWidth = Math.max(width, 120);
-                this.ctx.fillRect(x, y - 45, textWidth, 45);
-
-                this.ctx.fillStyle = color;
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.fillText(label, x + 8, y - 25);
-
-                if (subLabel) {
-                    this.ctx.fillStyle = 'white';
-                    this.ctx.font = '12px Arial';
-                    this.ctx.fillText(subLabel, x + 8, y - 8);
-                }
-            }
-
-            clearForm() {
-                this.personName.value = '';
-                this.personEmail.value = '';
-                this.personDepartment.value = '';
+                // Reset all steps
+                this.resetRegistrationSteps();
+                
+                // Reset detailed status
+                this.detailedStatus.textContent = 'Ready to start';
+                this.samplesCollected.textContent = '0/10';
+                this.averageQuality.textContent = '0%';
+                this.overallProgressFill.style.width = '0%';
+                this.overallProgressPercentage.textContent = '0%';
             }
 
             async loadGallery() {
-                // Simulate gallery loading
-                this.gallery = {};
-                this.updateGalleryDisplay();
-            }
-
-            updateGalleryDisplay() {
-                const count = Object.keys(this.gallery).length;
-                this.totalRegistered.textContent = count;
-
-                if (count === 0) {
-                    this.galleryList.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 20px;">No faces registered yet</div>';
-                } else {
-                    let html = '';
-                    for (const [id, person] of Object.entries(this.gallery)) {
-                        html += `
-                            <div class="gallery-item">
-                                <div class="gallery-item-name">${person.name}</div>
-                                <div class="gallery-item-actions">
-                                    <button class="btn btn-danger btn-sm" onclick="app.removePerson('${id}')">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-                        `;
+                try {
+                    this.showNotification('Refreshing gallery...', 'info');
+                    const response = await fetch(`${this.apiBaseUrl}/face-recognition/get-gallery`);
+                    if (response.ok) {
+                        this.gallery = await response.json();
+                        this.updateGalleryDisplay();
+                        this.showNotification('Gallery refreshed successfully!', 'success');
+                    } else {
+                        const errorData = await response.json();
+                        console.error('Failed to load gallery:', errorData);
+                        this.showNotification(`Failed to load gallery: ${errorData.detail || response.statusText}`, 'error');
+                        // Optionally, clear the local gallery if server fetch fails to avoid stale data
+                        // this.gallery = {}; 
+                        // this.updateGalleryDisplay();
                     }
-                    this.galleryList.innerHTML = html;
+                } catch (error) {
+                    console.error('Error loading gallery:', error);
+                    this.showNotification(`Error loading gallery: ${error.message}`, 'error');
                 }
             }
 
-            removePerson(personId) {
-                if (confirm('Are you sure you want to remove this person?')) {
-                    delete this.gallery[personId];
-                    this.updateGalleryDisplay();
+            async checkDatabase() {
+                try {
+                    this.showNotification('Checking database status...', 'info');
+                    const response = await fetch(`${this.apiBaseUrl}/face-recognition/database-status`);
+                    if (response.ok) {
+                        const dbStatus = await response.json();
+                        console.log('📊 Database Status:', dbStatus);
+                        
+                        const summary = dbStatus.summary;
+                        const statusMsg = `
+Database Status:
+- Total Persons: ${dbStatus.total_persons}
+- Total Embeddings: ${summary.total_embeddings}
+- Valid Embeddings: ${summary.valid_embeddings}
+- Invalid Embeddings: ${summary.invalid_embeddings}
+
+Persons in Database:
+${Object.entries(dbStatus.persons).map(([id, info]) => 
+    `- ${id}: ${info.embeddings_count} embeddings (${info.data_type})`
+).join('\n')}`;
+                        
+                        this.showNotification(statusMsg, 'info');
+                        
+                        // Check if we have valid embeddings
+                        if (summary.valid_embeddings === 0 && summary.total_embeddings > 0) {
+                            this.showNotification('⚠️ Warning: No valid embeddings found! This explains why recognition fails.', 'error');
+                        } else if (summary.valid_embeddings > 0) {
+                            this.showNotification(`✅ Found ${summary.valid_embeddings} valid embeddings in database`, 'success');
+                        }
+                        
+                    } else {
+                        const errorData = await response.json();
+                        console.error('Failed to check database:', errorData);
+                        this.showNotification(`Failed to check database: ${errorData.detail || response.statusText}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error checking database:', error);
+                    this.showNotification(`Error checking database: ${error.message}`, 'error');
                 }
-            }
-
-            updateProcessStats(processingTime) {
-                this.stats.processCount++;
-                this.stats.lastProcessTime = processingTime;
-
-                this.recognizedCount.textContent = this.stats.recognizedCount;
-                this.unknownCount.textContent = this.stats.unknownCount;
-                this.processTime.textContent = `${processingTime}ms`;
-
-                if (this.stats.recognizedCount > 0) {
-                    const avgConf = (this.stats.totalConfidence / this.stats.recognizedCount) * 100;
-                    this.avgConfidence.textContent = `${avgConf.toFixed(1)}%`;
-                }
-            }
-
-            captureImageData() {
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                
-                tempCanvas.width = this.video.videoWidth;
-                tempCanvas.height = this.video.videoHeight;
-                
-                tempCtx.drawImage(this.video, 0, 0);
-                
-                return tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-            }
-
-            clearCanvas() {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            }
-
-            showNotification(message, type) {
-                const notification = document.createElement('div');
-                notification.className = `notification ${type === 'error' ? 'error' : ''}`;
-                notification.textContent = message;
-                document.body.appendChild(notification);
-
-                setTimeout(() => notification.classList.add('show'), 100);
-                setTimeout(() => {
-                    notification.classList.remove('show');
-                    setTimeout(() => document.body.removeChild(notification), 300);
-                }, 3000);
             }
         }
 

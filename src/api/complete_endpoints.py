@@ -13,6 +13,8 @@ import base64
 import json
 import logging
 
+from src.ai_services.face_recognition.models import RecognitionModel # Added this line
+
 # Import service types for dependency injection
 from src.ai_services.face_detection.face_detection_service import \
     FaceDetectionService
@@ -184,11 +186,24 @@ async def face_recognition_health(
 ) -> Dict[str, Any]:
     """Health check for face recognition service"""
     try:
-        stats = service.get_performance_stats()
+        stats_result = await service.get_performance_stats()
+        # Ensure stats_result is a dict or has to_dict before calling
+        performance_stats_dict = {}
+        if isinstance(stats_result, dict):
+            performance_stats_dict = stats_result
+        elif hasattr(stats_result, 'to_dict') and callable(stats_result.to_dict):
+            performance_stats_dict = stats_result.to_dict()
+        else:
+            logger.warning(
+                "Performance stats from face_recognition_service is not a dict "
+                "and has no to_dict method."
+            )
+            # Fallback to an empty dict or a specific structure if preferred
+
         return {
             "status": "healthy",
             "service": "face_recognition",
-            "performance_stats": stats.to_dict()
+            "performance_stats": performance_stats_dict
         }
     except Exception as e:
         detail = f"Health check failed: {str(e)}"
@@ -210,8 +225,14 @@ async def extract_embedding_endpoint(
         if image is None:
             raise HTTPException(status_code=400, detail="Invalid image format")
 
+        # Convert model_name string to RecognitionModel enum
+        try:
+            model_enum = RecognitionModel(model_name.lower())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid model name: {model_name}")
+
         # Extract embedding
-        embedding = await service.extract_embedding(image, model_name)
+        embedding = await service.extract_embedding(image, model_enum)
 
         if embedding is None:
             raise HTTPException(status_code=400, detail="Failed to extract embedding")
@@ -240,7 +261,7 @@ async def recognize_face_endpoint(
         # Recognize face
         top_k_value = request.top_k if request.top_k is not None else 5
         result = await service.recognize_face(
-            face_image=image,
+            image=image,  # Changed from face_image to image
             gallery=request.gallery,
             model_name=request.model_name,
             top_k=top_k_value
@@ -283,6 +304,95 @@ async def add_face_to_database(
     except Exception as e:
         detail = f"Add face failed: {str(e)}"
         raise HTTPException(status_code=500, detail=detail)
+
+@face_recognition_router.get("/face-recognition/get-gallery")
+async def get_gallery_endpoint(
+    service: FaceRecognitionService = Depends(get_face_recognition_service)
+) -> JSONResponse:
+    """Retrieve the current face gallery from the service."""
+    try:
+        gallery_data = await service.get_gallery() # type: ignore
+        # FastAPI will automatically convert the Pydantic model (FaceGallery)
+        # or dict to a JSON response.
+        return JSONResponse(content=gallery_data)
+    except Exception as e:
+        logger.error(f"Failed to get gallery: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve gallery: {str(e)}"
+        )
+
+@face_recognition_router.get("/face-recognition/database-status")
+async def get_database_status_endpoint(
+    service: FaceRecognitionService = Depends(get_face_recognition_service)
+) -> JSONResponse:
+    """Get detailed database status for debugging"""
+    try:
+        # Access face_database directly from service
+        database = service.face_database
+
+        status = {
+            "total_persons": len(database),
+            "persons": {},
+            "summary": {
+                "total_embeddings": 0,
+                "valid_embeddings": 0,
+                "invalid_embeddings": 0
+            }
+        }
+
+        total_embeddings = 0
+        valid_embeddings = 0
+        invalid_embeddings = 0
+
+        for person_id, embeddings_data in database.items():
+            person_info = {
+                "embeddings_count": (
+                    len(embeddings_data)
+                    if isinstance(embeddings_data, list)
+                    else 0
+                ),
+                "data_type": type(embeddings_data).__name__,
+                "embedding_details": []
+            }
+
+            if isinstance(embeddings_data, list):
+                for i, emb_obj in enumerate(embeddings_data):
+                    total_embeddings += 1
+                    emb_detail = {
+                        "index": i,
+                        "type": type(emb_obj).__name__,
+                        "has_vector": hasattr(emb_obj, 'vector'),
+                    }
+
+                    if hasattr(emb_obj, 'vector'):
+                        vector = emb_obj.vector
+                        emb_detail.update({
+                            "vector_type": type(vector).__name__,
+                            "vector_shape": getattr(vector, 'shape', 'no_shape'),
+                            "is_ndarray": isinstance(vector, np.ndarray)
+                        })
+                        if isinstance(vector, np.ndarray):
+                            valid_embeddings += 1
+                        else:
+                            invalid_embeddings += 1
+                    else:
+                        invalid_embeddings += 1
+                        emb_detail["error"] = "No vector attribute"
+                    person_info["embedding_details"].append(emb_detail) # type: ignore
+
+            status["persons"][person_id] = person_info # type: ignore
+        status["summary"]["total_embeddings"] = total_embeddings # type: ignore
+        status["summary"]["valid_embeddings"] = valid_embeddings # type: ignore
+        status["summary"]["invalid_embeddings"] = invalid_embeddings # type: ignore
+
+        logger.info(f"Database status check: {status['summary']}")
+        return JSONResponse(content=status)
+
+    except Exception as e:
+        logger.error(f"Failed to get database status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get database status: {str(e)}"
+        )
 
 # === FACE ANALYSIS API ===
 face_analysis_router = APIRouter()
