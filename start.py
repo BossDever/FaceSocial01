@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Start script for Face Recognition System
-Comprehensive startup with health checks and configuration
+Fixed version with proper reload exclusions
 """
 
 import os
@@ -15,12 +15,15 @@ import logging
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-def setup_logging():
+def setup_logging(log_level: str = "INFO") -> logging.Logger:
     """Setup logging configuration"""
     os.makedirs("logs", exist_ok=True)
     
+    # Convert string to logging level
+    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+    
     logging.basicConfig(
-        level=logging.INFO,
+        level=numeric_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
@@ -29,7 +32,7 @@ def setup_logging():
     )
     return logging.getLogger(__name__)
 
-def check_system_requirements():
+def check_system_requirements() -> bool:
     """Check system requirements"""
     logger = logging.getLogger(__name__)
     
@@ -64,7 +67,7 @@ def check_system_requirements():
     
     return True
 
-def check_model_files():
+def check_model_files() -> bool:
     """Check if model files exist"""
     logger = logging.getLogger(__name__)
     
@@ -97,7 +100,7 @@ def check_model_files():
     
     return True
 
-def check_gpu_availability():
+def check_gpu_availability() -> bool:
     """Check GPU availability"""
     logger = logging.getLogger(__name__)
     
@@ -117,7 +120,7 @@ def check_gpu_availability():
         logger.warning(f"⚠️ Error checking GPU: {e}")
         return False
 
-async def test_services():
+async def test_services() -> bool:
     """Test service initialization"""
     logger = logging.getLogger(__name__)
     
@@ -142,8 +145,14 @@ async def test_services():
         logger.error(f"❌ Service test failed: {e}")
         return False
 
-def start_server(host="0.0.0.0", port=8080, reload=True, workers=1):
-    """Start the FastAPI server"""
+def start_server(
+    host: str = "0.0.0.0",
+    port: int = 8080,
+    reload: bool = True,
+    workers: int = 1,
+    log_level: str = "info"
+) -> bool:
+    """Start the FastAPI server with proper reload configuration"""
     logger = logging.getLogger(__name__)
     
     try:
@@ -154,24 +163,69 @@ def start_server(host="0.0.0.0", port=8080, reload=True, workers=1):
         logger.info(f"   Port: {port}")
         logger.info(f"   Reload: {reload}")
         logger.info(f"   Workers: {workers}")
+        logger.info(f"   Log Level: {log_level}")
         
-        uvicorn.run(
-            "src.main:app",
-            host=host,
-            port=port,
-            reload=reload,
-            workers=workers,
-            log_level="info",
-            access_log=True
-        )
+        # Define reload configuration to exclude problematic files
+        reload_dirs_config = [
+            str(project_root / "src"),
+            str(project_root / "config"),
+        ]
+        # Ignore changes in temp folder, mypy cache, and logs
+        reload_excludes_config = [
+            "**/temp/**",      # all files under any temp/ directory
+            "**/temp",         # temp folder itself
+            ".mypy_cache/**",  # cache folder
+            "logs/**",         # log files location
+        ]
+        # Only watch specific file types
+        reload_includes_config = [
+            "*.py",
+            "*.yml",
+            "*.yaml",
+            "*.json",
+            "*.toml",
+        ]
+
+        logger.info("🔄 Reload configuration:")
+        logger.info(f"  Reload Dirs: {reload_dirs_config}")
+        logger.info(f"  Reload Excludes: {reload_excludes_config}")
+        logger.info(f"  Reload Includes: {reload_includes_config}")
+        
+        if reload:
+            uvicorn.run(
+                "src.main:app",
+                host=host,
+                port=port,
+                reload=True,
+                reload_dirs=reload_dirs_config,
+                reload_excludes=reload_excludes_config,
+                reload_includes=reload_includes_config,
+                workers=workers,  # Use configured worker count
+                log_level=log_level.lower(),
+                access_log=True,
+                use_colors=True,
+            )
+        else:
+            uvicorn.run(
+                "src.main:app",
+                host=host,
+                port=port,
+                reload=False,
+                workers=workers,
+                log_level=log_level.lower(),  # Ensure lowercase
+                access_log=True,
+                use_colors=True
+            )
+        return True # Add return True for successful server start/stop
         
     except KeyboardInterrupt:
         logger.info("👋 Shutdown requested by user")
+        return True # Also return True on graceful shutdown
     except Exception as e:
         logger.error(f"❌ Server error: {e}")
         return False
 
-def main():
+def main() -> bool:
     """Main entry point"""
     # Setup argument parser
     parser = argparse.ArgumentParser(description="Face Recognition System Starter")
@@ -180,11 +234,13 @@ def main():
     parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
     parser.add_argument("--workers", type=int, default=1, help="Number of workers")
     parser.add_argument("--skip-checks", action="store_true", help="Skip system checks")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
+                       help="Logging level")
     
     args = parser.parse_args()
     
     # Setup logging
-    logger = setup_logging()
+    logger = setup_logging(args.log_level)
     
     print("🎭 Face Recognition System Starter")
     print("=" * 50)
@@ -216,7 +272,8 @@ def main():
         host=args.host,
         port=args.port,
         reload=not args.no_reload,
-        workers=args.workers
+        workers=args.workers,
+        log_level=args.log_level
     )
     
     return True

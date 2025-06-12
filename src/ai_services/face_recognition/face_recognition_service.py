@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 class FaceRecognitionService:
     """Enhanced Face Recognition Service with Multi-model Support"""
 
+    current_model: Optional[Any]  # ort.InferenceSession if available
+    current_model_type: Optional[RecognitionModel]
+    models_cache: Dict[str, Any]
+    face_database: Dict[str, List[FaceEmbedding]]
+    stats: ModelPerformanceStats
+    model_configs: Dict[RecognitionModel, Dict[str, Union[str, tuple, list, int]]]
+    config: RecognitionConfig
+    vram_manager: Any
+    logger: logging.Logger
+
     def __init__(
         self, vram_manager: Any = None, config: Optional[Dict[str, Any]] = None
     ) -> None:
@@ -67,10 +77,10 @@ class FaceRecognitionService:
         # Model management
         self.current_model = None
         self.current_model_type = self.config.preferred_model
-        self.models_cache: Dict[str, Any] = {}
+        self.models_cache = {}
 
         # Face database - compatible with existing system
-        self.face_database: Dict[str, List[FaceEmbedding]] = {}
+        self.face_database = {}
 
         # Performance tracking
         self.stats = ModelPerformanceStats()
@@ -114,6 +124,10 @@ class FaceRecognitionService:
                 return False
 
             # Load default model
+            if self.current_model_type is None:
+                self.logger.error("❌ Default model type is not set.")
+                return False
+            # self.current_model_type is confirmed to be RecognitionModel here
             success = await self.load_model(self.current_model_type)
             if not success:
                 self.logger.error("❌ Failed to load default model")
@@ -367,12 +381,23 @@ class FaceRecognitionService:
     async def _warmup_model(self) -> None:
         """Warm up model for optimal performance"""
         try:
-            if self.current_model is None:
+            if self.current_model is None or self.current_model_type is None:
+                self.logger.warning(
+                    "⚠️ Model or model type not available for warmup."
+                )
                 return
 
-            self.logger.info(f"🔥 Warming up {self.current_model_type.value} model...")
+            # self.current_model_type is confirmed to be RecognitionModel here
+            self.logger.info(
+                f"🔥 Warming up {self.current_model_type.value} model..."
+            )
 
             # Get model configuration
+            if self.current_model_type not in self.model_configs:
+                self.logger.error(
+                    f"❌ Model config not found for {self.current_model_type.value}"
+                )
+                return
             model_config = self.model_configs[self.current_model_type]
             input_size = cast(tuple, model_config["input_size"])
 
@@ -406,7 +431,19 @@ class FaceRecognitionService:
                 self.logger.error("❌ Invalid face image")
                 return None
 
+            if self.current_model_type is None:
+                self.logger.error(
+                    "❌ Current model type not set for preprocessing."
+                )
+                return None
+
+            # self.current_model_type is confirmed to be RecognitionModel here
             # Get model configuration
+            if self.current_model_type not in self.model_configs:
+                self.logger.error(
+                    f"❌ Model config not found for {self.current_model_type.value}"
+                )
+                return None
             model_config = self.model_configs[self.current_model_type]
             target_size = cast(tuple, model_config["input_size"])
             mean = np.array(cast(list, model_config["mean"]))
@@ -474,14 +511,23 @@ class FaceRecognitionService:
 
     async def _switch_model_if_needed(self, model_name: Optional[str]) -> None:
         """Switch model if a different one is requested"""
-        if model_name and model_name != self.current_model_type.value:
-            try:
-                target_model = RecognitionModel(model_name.lower())
-                await self.load_model(target_model)
-            except ValueError:
-                self.logger.warning(
-                    f"⚠️ Unknown model: {model_name}, using current model"
-                )
+        if model_name:
+            should_switch = False
+            if self.current_model_type is None:
+                should_switch = True
+            elif model_name != self.current_model_type.value:
+                should_switch = True
+
+            if should_switch:
+                try:
+                    target_model = RecognitionModel(model_name.lower())
+                    await self.load_model(target_model)
+                except ValueError:
+                    self.logger.warning(
+                        f"⚠️ Unknown model: {model_name}, using current model"
+                    )
+            # If model_name matches current_model_type.value, do nothing.
+        # If model_name is None, do nothing.
 
     def _run_model_inference(self, input_tensor: np.ndarray) -> Optional[np.ndarray]:
         """Run model inference and return embedding vector"""
@@ -498,7 +544,7 @@ class FaceRecognitionService:
                 return None
 
             # Extract and normalize embedding
-            embedding_vector = outputs[0]
+            embedding_vector: np.ndarray = outputs[0]  # Explicitly type hint
             if len(embedding_vector.shape) > 1:
                 embedding_vector = embedding_vector[0]
 
@@ -606,8 +652,8 @@ class FaceRecognitionService:
 
     def compare_faces(
         self,
-        embedding1: np.ndarray,
-        embedding2: np.ndarray,
+        embedding1: Optional[np.ndarray],
+        embedding2: Optional[np.ndarray],
         model_used: Optional[str] = None,
     ) -> FaceComparisonResult:
         """Compare two face embeddings"""
@@ -624,17 +670,30 @@ class FaceRecognitionService:
                     error="Invalid embeddings",
                 )
 
+            # At this point, embedding1 and embedding2 are np.ndarray
             # Normalize embeddings if needed
             norm1 = np.linalg.norm(embedding1)
             norm2 = np.linalg.norm(embedding2)
 
+            embedding1_normalized: np.ndarray = embedding1
+            embedding2_normalized: np.ndarray = embedding2
+
             if norm1 > 1e-8:
-                embedding1 = embedding1 / norm1
+                embedding1_normalized = embedding1 / norm1
+            else:
+                # Optionally log a warning or handle zero vector
+                self.logger.warning("Embedding 1 has near-zero norm.")
+
+
             if norm2 > 1e-8:
-                embedding2 = embedding2 / norm2
+                embedding2_normalized = embedding2 / norm2
+            else:
+                # Optionally log a warning or handle zero vector
+                self.logger.warning("Embedding 2 has near-zero norm.")
+
 
             # Calculate cosine similarity
-            dot_product = np.dot(embedding1, embedding2)
+            dot_product = np.dot(embedding1_normalized, embedding2_normalized)
             similarity = float(np.clip(dot_product, -1.0, 1.0))
 
             # Convert to 0-1 range
@@ -678,16 +737,23 @@ class FaceRecognitionService:
         """Search for matches in the gallery"""
         matches: List[FaceMatch] = []
 
+        if self.current_model_type is None:
+            self.logger.error("❌ Current model type not set for gallery search.")
+            return matches
+
+
         for person_id, person_data in gallery.items():
             max_similarity = 0.0
             person_embeddings = person_data.get("embeddings", [])
 
             for stored_embedding in person_embeddings:
                 if isinstance(stored_embedding, np.ndarray):
+                    # self.current_model_type is confirmed not None here
+                    model_type_value = self.current_model_type.value
                     comparison = self.compare_faces(
                         query_embedding.vector,
                         stored_embedding,
-                        self.current_model_type.value,
+                        model_type_value,
                     )
 
                     if comparison.similarity > max_similarity:
@@ -878,7 +944,8 @@ class FaceRecognitionService:
                 self.logger.info("🧹 GPU cache cleared")
 
             # Release VRAM allocations
-            if self.vram_manager:
+            if self.vram_manager and self.current_model_type:
+                # self.current_model_type is confirmed not None here
                 await self.vram_manager.release_model_allocation(
                     f"{self.current_model_type.value}-face-recognition"
                 )

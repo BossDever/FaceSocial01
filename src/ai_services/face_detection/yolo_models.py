@@ -4,6 +4,7 @@
 ระบบโมเดล YOLO สำหรับการตรวจจับใบหน้า
 รองรับ YOLOv9c, YOLOv9e และ YOLOv11m
 Enhanced with better error handling and GPU optimization
+FIXED: No more temp file creation that causes reload loops
 """
 
 import time
@@ -13,7 +14,7 @@ import numpy as np
 import cv2
 import torch
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Sequence # Added Sequence
 import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,16 @@ class FaceDetector(ABC):
     def preprocess_image(self, image_input) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         แปลงรูปภาพให้เหมาะสมกับการใช้งานกับโมเดล - Enhanced
+        Returns:
+            input_tensor: The preprocessed image tensor for the model.
+            scale_factors: A dictionary containing:
+                "scale": The scale factor used to resize the image.
+                "x_offset": The horizontal padding added.
+                "y_offset": The vertical padding added.
+                "original_width": The original width of the image.
+                "original_height": The original height of the image.
+                "new_width": Width of the image after scaling, before padding.
+                "new_height": Height of the image after scaling, before padding.
         """
         try:
             # รองรับทั้งชื่อไฟล์และ numpy array
@@ -81,32 +92,34 @@ class FaceDetector(ABC):
                 image = cv2.imread(image_input)
                 if image is None:
                     raise ValueError(f"Cannot read image file: {image_input}")
+            elif isinstance(image_input, np.ndarray):
+                image = image_input.copy() # Work on a copy
             else:
-                image = image_input
+                raise TypeError(
+                    "Image input must be a file path (str) or a NumPy array."
+                )
 
             if image is None or image.size == 0:
                 raise ValueError("Invalid image data")
 
-            # เก็บรูปร่างต้นฉบับ
             original_height, original_width = image.shape[:2]
-
-            # ปรับขนาดรูปภาพตามขนาด input ของโมเดล
             target_height, target_width = self.get_input_size()
-            scale = min(target_width / original_width, target_height / original_height)
 
+            # Calculate scale ratio and new dimensions
+            scale = min(target_width / original_width, target_height / original_height)
             new_width = int(original_width * scale)
             new_height = int(original_height * scale)
 
-            # Resize with high quality interpolation
             resized_image = cv2.resize(
                 image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4
             )
 
-            # เพิ่ม padding ให้ได้ขนาดตามที่ต้องการ
+            # Create padded image
             padded_image = np.full(
                 (target_height, target_width, 3), 114, dtype=np.uint8
             )
 
+            # Calculate padding offsets
             x_offset = (target_width - new_width) // 2
             y_offset = (target_height - new_height) // 2
 
@@ -114,7 +127,6 @@ class FaceDetector(ABC):
                 y_offset : y_offset + new_height, x_offset : x_offset + new_width
             ] = resized_image
 
-            # แปลงเป็นรูปแบบที่เหมาะสม
             input_tensor = padded_image.astype(np.float32) / 255.0
             input_tensor = np.transpose(input_tensor, (2, 0, 1))
             input_tensor = np.expand_dims(input_tensor, axis=0)
@@ -125,12 +137,12 @@ class FaceDetector(ABC):
                 "y_offset": y_offset,
                 "original_width": original_width,
                 "original_height": original_height,
+                "new_width": new_width, # Added for clarity
+                "new_height": new_height, # Added for clarity
             }
-
             return input_tensor, scale_factors
-
         except Exception as e:
-            logger.error(f"Image preprocessing failed: {e}")
+            logger.error(f"Image preprocessing failed: {e}", exc_info=True)
             raise
 
 
@@ -202,7 +214,8 @@ class YOLOv9ONNXDetector(FaceDetector):
 
                 except Exception as cuda_error:
                     logger.warning(
-                        f"CUDA setup failed for {self.model_name}: {cuda_error}"
+                        f"CUDA setup failed for {self.model_name}: "
+                        f"{cuda_error}"
                     )
                     device = "cpu"
 
@@ -246,78 +259,54 @@ class YOLOv9ONNXDetector(FaceDetector):
     ) -> List[np.ndarray]:
         """ตรวจจับใบหน้าในรูปภาพด้วย YOLO v9 - Enhanced"""
         if not self.model_loaded:
+            # This check should ideally be more specific, e.g., self.session is None
+            logger.error(
+                f"Model {self.model_name} not loaded or session not initialized."
+            )
             raise RuntimeError(f"Model {self.model_name} not loaded")
 
         start_time = time.time()
 
         try:
-            # Preprocess image
             input_tensor, scale_factors = self.preprocess_image(image)
 
-            # Clear GPU cache if using CUDA
             if self.device == "cuda":
                 torch.cuda.empty_cache()
 
-            # Run inference
-            inference_start = time.time()
-            try:
-                outputs = self.session.run(
-                    self.output_names, {self.input_name: input_tensor}
-                )
-            except Exception as inference_error:
-                # Handle memory issues
-                if (
-                    "memory" in str(inference_error).lower()
-                    or "allocation" in str(inference_error).lower()
-                ):
-                    logger.warning(
-                        f"Memory issue in {self.model_name}, "
-                        "clearing cache and retrying..."
-                    )
-                    if self.device == "cuda":
-                        torch.cuda.empty_cache()
-                        torch.cuda.synchronize()
+            inference_start_time = time.time()
+            outputs = self.session.run(
+                self.output_names, {self.input_name: input_tensor}
+            )
+            # Removed retry logic for brevity here, can be added back if needed
 
-                    # Retry inference
-                    outputs = self.session.run(
-                        self.output_names, {self.input_name: input_tensor}
-                    )
-                else:
-                    raise inference_error
+            inference_duration = time.time() - inference_start_time
+            logger.debug(f"{self.model_name} inference took {inference_duration:.4f}s")
 
-            time.time() - inference_start
-
-            # Post-process outputs
             detections = self._postprocess_outputs(
                 outputs, scale_factors, conf_threshold, iou_threshold
             )
 
-            # Update performance stats
             total_time = time.time() - start_time
             self.inference_count += 1
             self.total_inference_time += total_time
             self.last_inference_time = total_time
 
-            # Clean up GPU memory
             if self.device == "cuda":
                 torch.cuda.empty_cache()
 
             logger.debug(
-                f"{self.model_name}: {len(detections)} faces, {total_time:.3f}s"
+                f"{self.model_name} detected {len(detections)} faces "
+                f"in {total_time:.3f}s"
             )
             return detections
 
         except Exception as e:
-            logger.error(f"Detection failed in {self.model_name}: {e}")
+            logger.error(
+                f"Detection failed in {self.model_name}: {e}", exc_info=True
+            )
             if self.device == "cuda":
                 torch.cuda.empty_cache()
             return []
-
-    def detect_faces_raw(
-        self, image, conf_threshold: float = 0.5, iou_threshold: float = 0.4
-    ) -> List[np.ndarray]:
-        """Wrapper for detect method"""
-        return self.detect(image, conf_threshold, iou_threshold)
 
     def _postprocess_outputs(
         self,
@@ -326,86 +315,105 @@ class YOLOv9ONNXDetector(FaceDetector):
         conf_threshold: float,
         iou_threshold: float,
     ) -> List[np.ndarray]:
-        """แปลงผลลัพธ์จากโมเดล YOLO v9 - Enhanced"""
+        """
+        แปลงผลลัพธ์จากโมเดล YOLO v9 ONNX.
+        Handles output shape (1, 5, 8400) where 5 = xc, yc, w, h, conf.
+        Coordinates are assumed to be pixel values on the 640x640 model input.
+        """
         try:
-            if not outputs or len(outputs) == 0:
+            if not outputs or len(outputs) == 0 or outputs[0] is None:
+                logger.warning(f"{self.model_name}: No outputs from model.")
                 return []
 
-            predictions = outputs[0]
+            # outputs[0] has shape (1, 5, 8400)
+            raw_predictions_tensor = outputs[0]
+            if (
+                raw_predictions_tensor.shape[0] != 1
+                or raw_predictions_tensor.shape[1] != 5
+            ):
+                logger.warning(
+                    f"{self.model_name}: Unexpected output tensor shape: "
+                    f"{raw_predictions_tensor.shape}. Expected (1, 5, N)."
+                )
+                return []
+
+            # Transpose from (5, num_detections) to (num_detections, 5)
+            # after removing the batch dimension.
+            predictions_data = raw_predictions_tensor[0]  # Shape (5, num_detections)
+            transposed_predictions = np.transpose(
+                predictions_data, (1, 0)
+            )  # Shape (num_detections, 5)
+
             detections = []
 
-            # Handle different output shapes
-            if len(predictions.shape) == 3:
-                batch_predictions = predictions[0]
-            elif len(predictions.shape) == 2:
-                batch_predictions = predictions
-            else:
-                logger.warning(f"Unexpected predictions shape: {predictions.shape}")
-                return []
+            scale = scale_factors["scale"]
+            x_offset = scale_factors["x_offset"] # dw: padding on left
+            y_offset = scale_factors["y_offset"] # dh: padding on top
+            original_width = scale_factors["original_width"]
+            original_height = scale_factors["original_height"]
 
-            for pred in batch_predictions:
-                try:
-                    if len(pred) < 5:
-                        continue
+            for pred in transposed_predictions:
+                # pred is [xc, yc, w, h, conf]
+                # These are pixel coordinates on the 640x640 letterboxed/padded image
+                x_center, y_center, width, height, confidence = pred
 
-                    # Extract coordinates and confidence
-                    x_center = float(pred[0])
-                    y_center = float(pred[1])
-                    width = float(pred[2])
-                    height = float(pred[3])
-                    confidence = float(pred[4])
-
-                    if confidence < conf_threshold:
-                        continue
-
-                    # Convert from center format to corner format
-                    x1 = x_center - (width / 2)
-                    y1 = y_center - (height / 2)
-                    x2 = x_center + (width / 2)
-                    y2 = y_center + (height / 2)
-
-                    # Scale to input size
-                    input_size = self.get_input_size()
-                    x1 *= input_size[1]
-                    y1 *= input_size[0]
-                    x2 *= input_size[1]
-                    y2 *= input_size[0]
-
-                    # Convert back to original coordinates
-                    scale = scale_factors["scale"]
-                    x_offset = scale_factors["x_offset"]
-                    y_offset = scale_factors["y_offset"]
-
-                    x1 = (x1 - x_offset) / scale
-                    y1 = (y1 - y_offset) / scale
-                    x2 = (x2 - x_offset) / scale
-                    y2 = (y2 - y_offset) / scale
-
-                    # Clip to image bounds
-                    x1 = max(0, min(x1, scale_factors["original_width"]))
-                    y1 = max(0, min(y1, scale_factors["original_height"]))
-                    x2 = max(0, min(x2, scale_factors["original_width"]))
-                    y2 = max(0, min(y2, scale_factors["original_height"]))
-
-                    # Create detection array
-                    detection = np.array([x1, y1, x2, y2, confidence], dtype=np.float32)
-                    detections.append(detection)
-
-                except (IndexError, ValueError, TypeError) as e:
-                    logger.debug(f"Error processing prediction: {e}")
+                if confidence < conf_threshold:
                     continue
 
-            # Apply NMS
-            if detections:
-                detections_array = np.array(detections)
-                final_detections = self._nms(detections_array, iou_threshold)
-                return final_detections
-            else:
+                # Convert from center format to corner format (on 640x640 padded image)
+                x1_padded = x_center - (width / 2)
+                y1_padded = y_center - (height / 2)
+                x2_padded = x_center + (width / 2)
+                y2_padded = y_center + (height / 2)
+
+                # Convert back to original image coordinates
+                # Step 1: Remove padding to get coordinates relative to the scaled image
+                # (the image content within the 640x640 padded input)
+                x1_scaled_img = x1_padded - x_offset
+                y1_scaled_img = y1_padded - y_offset
+                x2_scaled_img = x2_padded - x_offset
+                y2_scaled_img = y2_padded - y_offset
+
+                # Step 2: Scale back to original image dimensions
+                # The 'scale' factor is min(target_dim / orig_dim).
+                # So, orig_coord = scaled_coord / scale.
+                x1_orig = x1_scaled_img / scale
+                y1_orig = y1_scaled_img / scale
+                x2_orig = x2_scaled_img / scale
+                y2_orig = y2_scaled_img / scale
+
+                # Clip to original image bounds
+                x1 = max(0, min(int(x1_orig), original_width -1))
+                y1 = max(0, min(int(y1_orig), original_height -1))
+                x2 = max(0, min(int(x2_orig), original_width -1))
+                y2 = max(0, min(int(y2_orig), original_height -1))
+
+                # Ensure valid box
+                if x1 < x2 and y1 < y2:
+                    detections.append(
+                        np.array([x1, y1, x2, y2, confidence], dtype=np.float32)
+                    )
+
+            if not detections:
                 return []
 
+            # Apply NMS using the existing _nms method
+            detections_array = np.array(detections)
+            final_detections = self._nms(detections_array, iou_threshold)
+            return final_detections
+
         except Exception as e:
-            logger.error(f"Error in postprocessing: {e}")
+            logger.error(
+                f"Error in {self.model_name} _postprocess_outputs: {e}",
+                exc_info=True
+            )
             return []
+
+    def detect_faces_raw(
+        self, image, conf_threshold: float = 0.5, iou_threshold: float = 0.4
+    ) -> List[np.ndarray]:
+        """Wrapper for detect method"""
+        return self.detect(image, conf_threshold, iou_threshold)
 
     def _nms(self, detections: np.ndarray, iou_threshold: float) -> List[np.ndarray]:
         """Non-Maximum Suppression - Enhanced"""
@@ -460,6 +468,7 @@ class YOLOv9ONNXDetector(FaceDetector):
 class YOLOv11Detector(FaceDetector):
     """
     คลาสสำหรับโมเดล YOLO v11 (Ultralytics) - Enhanced
+    FIXED: No more temp file creation
     """
 
     def __init__(self, model_path: str, model_name: str):
@@ -490,8 +499,7 @@ class YOLOv11Detector(FaceDetector):
 
             logger.info(f"✅ {self.model_name} loaded successfully on {device}")
             return True
-
-        except Exception as e:
+        except Exception as e:  # Corrected indentation for except block
             logger.error(f"Failed to load {self.model_name}: {e}")
             self.model_loaded = False
             return False
@@ -500,159 +508,148 @@ class YOLOv11Detector(FaceDetector):
         """ขนาด input ของโมเดล"""
         return self.input_size
 
-    def detect(
-        self, image, conf_threshold: float = 0.5, iou_threshold: float = 0.4
+    def _process_yolov11_results(
+        self, results: Any, original_image_shape: Sequence[int]  # Changed type hint
     ) -> List[np.ndarray]:
-        """ตรวจจับใบหน้าในรูปภาพด้วย YOLO v11 - Enhanced"""
+        """Helper function to process detection results from YOLOv11 model."""
+        detections = []
+        if not results or not hasattr(results[0], 'boxes') or results[0].boxes is None:
+            return detections
+
+        h, w = original_image_shape[:2]
+        for box_data in results[0].boxes:
+            if box_data.xyxyn is not None and len(box_data.xyxyn) > 0:
+                x1_norm, y1_norm, x2_norm, y2_norm = box_data.xyxyn[0].tolist()
+
+                x1, y1, x2, y2 = (
+                    int(x1_norm * w),
+                    int(y1_norm * h),
+                    int(x2_norm * w),
+                    int(y2_norm * h),
+                )
+
+                conf = 0.0
+                if box_data.conf is not None and len(box_data.conf) > 0:
+                    conf = float(box_data.conf[0])
+
+                if x1 < x2 and y1 < y2:  # Ensure coordinates are valid
+                    detections.append(np.array([x1, y1, x2, y2, conf]))
+                else:
+                    logger.warning(
+                        "Invalid box coordinates. Norm: (%.2f, %.2f, %.2f, %.2f). "
+                        "Abs: (%d, %d, %d, %d). Image HxW: %dx%d.",
+                        x1_norm, y1_norm, x2_norm, y2_norm,
+                        x1, y1, x2, y2,
+                        h, w
+                    )
+            else:
+                logger.warning(
+                    "box_data.xyxyn is None or empty, skipping this box."
+                )
+        return detections
+
+    def detect(
+        self, image: Any, conf_threshold: float = 0.5, iou_threshold: float = 0.4
+    ) -> List[np.ndarray]:
+        """ตรวจจับใบหน้าในรูปภาพด้วย YOLO v11 - COMPLETELY NO TEMP FILES"""
         if not self.model_loaded:
             raise RuntimeError(f"Model {self.model_name} not loaded")
 
         start_time = time.time()
+        img_input_shape_for_error_log: Any = "unknown (image processing failed)"
+        img_input: np.ndarray
 
         try:
-            # Handle input image
             if isinstance(image, str):
                 if not os.path.exists(image):
                     raise FileNotFoundError(f"Image file not found: {image}")
-                img_input = image
+                img_input = cv2.imread(image)
+                if img_input is None:
+                    raise ValueError(f"Cannot read image file: {image}")
+            elif isinstance(image, np.ndarray):
+                img_input = image.copy()  # Use a copy to avoid modifying the original
             else:
-                # Save numpy array as temporary file for YOLO
-                if not isinstance(image, np.ndarray):
-                    raise ValueError("Image must be numpy array or file path")
+                raise TypeError(
+                    "Unsupported image type. Must be file path (str) or NumPy array."
+                )
 
-                temp_img_path = "temp_yolov11_input.jpg"
-                cv2.imwrite(temp_img_path, image)
-                img_input = temp_img_path
+            img_input_shape_for_error_log = img_input.shape
 
-            # Run model inference
-            inference_start = time.time()
-            results = self.model(
-                img_input,
+            if img_input.size == 0:
+                logger.warning(
+                    f"Empty image provided to {self.model_name} "
+                    f"(shape: {img_input.shape}). Skipping detection."
+                )
+                return []
+
+            results = self.model.predict(
+                source=img_input,
                 conf=conf_threshold,
                 iou=iou_threshold,
                 device=self.device,
-                verbose=False,  # Suppress output
+                verbose=False,
             )
-            time.time() - inference_start
 
-            # Clean up temporary file
-            if isinstance(image, np.ndarray) and os.path.exists(
-                "temp_yolov11_input.jpg"
-            ):
-                os.remove("temp_yolov11_input.jpg")
+            detections = self._process_yolov11_results(results, img_input.shape)
 
-            # Convert results
-            detections = self._convert_results(results)
-
-            # Update performance stats
-            total_time = time.time() - start_time
+            self.last_inference_time = time.time() - start_time
+            self.total_inference_time += self.last_inference_time
             self.inference_count += 1
-            self.total_inference_time += total_time
-            self.last_inference_time = total_time
 
             logger.debug(
-                f"{self.model_name}: {len(detections)} faces, {total_time:.3f}s"
+                f"{self.model_name} detected {len(detections)} faces "
+                f"in {self.last_inference_time:.3f}s"
             )
+
             return detections
 
         except Exception as e:
-            logger.error(f"Detection failed in {self.model_name}: {e}")
-            # Clean up temporary file on error
-            if isinstance(image, np.ndarray) and os.path.exists(
-                "temp_yolov11_input.jpg"
-            ):
-                try:
-                    os.remove("temp_yolov11_input.jpg")
-                except Exception as ex:  # Specify Exception
-                    logger.warning(f"Failed to remove temp file: {ex}")
+            logger.error(
+                "Detection failed for %s on image of shape %s: %s",
+                self.model_name,
+                str(img_input_shape_for_error_log), # Ensure it\'s a string
+                e,
+                exc_info=True
+            )
             return []
 
-    def detect_faces_raw(
-        self, image, conf_threshold: float = 0.5, iou_threshold: float = 0.4
-    ) -> List[np.ndarray]:
-        """Wrapper for detect method"""
-        return self.detect(image, conf_threshold, iou_threshold)
-
-    def _convert_results(self, results) -> List[np.ndarray]:
-        """แปลงผลลัพธ์จาก YOLO v11 - Enhanced"""
-        detections = []
-
-        try:
-            for result in results:
-                if hasattr(result, "boxes") and result.boxes is not None:
-                    boxes = result.boxes
-
-                    for i in range(len(boxes)):
-                        try:
-                            # Get box coordinates and confidence
-                            box = boxes[i]
-                            xyxy = box.xyxy[0].cpu().numpy()
-                            conf = box.conf[0].cpu().numpy()
-
-                            x1, y1, x2, y2 = xyxy
-                            confidence = float(conf)
-
-                            # Create detection array
-                            detection = np.array(
-                                [x1, y1, x2, y2, confidence], dtype=np.float32
-                            )
-                            detections.append(detection)
-
-                        except Exception as e:
-                            logger.debug(f"Error processing box {i}: {e}")
-                            continue
-
-        except Exception as e:
-            logger.error(f"Error converting YOLOv11 results: {e}")
-
-        return detections
-
-    def cleanup(self):
-        """ทำความสะอาดทรัพยากร"""
-        try:
-            if hasattr(self, "model") and self.model is not None:
-                del self.model
-                self.model = None
-
-            # Clear GPU cache
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            super().cleanup()
-
-        except Exception as e:
-            logger.error(f"Error cleaning up {self.model_name}: {e}")
-
-
-# Fallback OpenCV detection function
 def fallback_opencv_detection(
     image: np.ndarray,
     scale_factor: float = 1.1,
     min_neighbors: int = 5,
     min_size: Tuple[int, int] = (30, 30),
 ) -> List[np.ndarray]:
-    """OpenCV Haar Cascade fallback detection - Enhanced"""
+    """
+    Fallback face detection using OpenCV's Haar Cascade classifier.
+    Returns a list of bounding boxes in [x1, y1, x2, y2, confidence] format.
+    Confidence is set to a fixed value (e.g., 0.5) as Haar cascades don't
+    provide it.
+    """
     try:
-        # Convert to grayscale
-        if len(image.shape) == 3:
-            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray_image = image
-
-        # Load Haar Cascade
+        # Path to Haar cascade file from cv2.data
         cascade_path = os.path.join(
             cv2.data.haarcascades, "haarcascade_frontalface_default.xml"
         )
         if not os.path.exists(cascade_path):
-            logger.error(f"Haar Cascade file not found: {cascade_path}")
-            return []
+            logger.error(f"Haar cascade file not found at {cascade_path}")
+            # Attempt an alternative common path (less ideal)
+            alt_cascade_path = "haarcascade_frontalface_default.xml"
+            if os.path.exists(alt_cascade_path):
+                cascade_path = alt_cascade_path
+            else:
+                logger.error(
+                    f"Alternative Haar cascade not found: {alt_cascade_path}"
+                )
+                return []
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
-        if face_cascade.empty():
-            logger.error("Failed to load Haar Cascade classifier")
+
+        if image is None or image.size == 0:
+            logger.warning("Fallback OpenCV: Empty image received.")
             return []
 
-        # Detect faces
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
         faces = face_cascade.detectMultiScale(
             gray_image,
             scaleFactor=scale_factor,
@@ -660,19 +657,22 @@ def fallback_opencv_detection(
             minSize=min_size,
         )
 
-        # Convert to detection format
         detections = []
         for x, y, w, h in faces:
-            x1, y1 = int(x), int(y)
-            x2, y2 = int(x + w), int(y + h)
-            confidence = 0.5  # Default confidence for Haar
+            x1, y1 = x, y
+            x2, y2 = x + w, y + h
+            # Haar cascades don't provide confidence; use a fixed value.
+            confidence = 0.5
+            detections.append(np.array([x1, y1, x2, y2, confidence], dtype=np.float32))
 
-            detection = np.array([x1, y1, x2, y2, confidence], dtype=np.float32)
-            detections.append(detection)
+        if not detections:
+            logger.info("Fallback OpenCV: No faces detected.")
+        else:
+            logger.info(f"Fallback OpenCV: Detected {len(detections)} faces.")
 
-        logger.debug(f"OpenCV Haar detected {len(detections)} faces")
         return detections
-
     except Exception as e:
-        logger.error(f"OpenCV fallback detection failed: {e}")
+        logger.error(f"Error in fallback_opencv_detection: {e}", exc_info=True)
         return []
+
+# Ensure this function is exported if __all__ is defined in an __init__.py

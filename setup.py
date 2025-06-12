@@ -6,8 +6,9 @@ Setup script for Face Recognition System
 import os
 import sys
 import subprocess
+from typing import List
 
-def check_python_version():
+def check_python_version() -> bool:
     """Check if Python version is compatible"""
     if sys.version_info < (3, 8):
         print("❌ Error: Python 3.8 or higher is required")
@@ -16,7 +17,7 @@ def check_python_version():
     print(f"✅ Python version: {sys.version}")
     return True
 
-def check_cuda():
+def check_cuda() -> bool:
     """Check CUDA availability"""
     try:
         import torch
@@ -31,7 +32,7 @@ def check_cuda():
         print("⚠️ PyTorch not installed yet")
         return False
 
-def create_directories():
+def create_directories() -> None:
     """Create necessary directories"""
     directories = [
         "logs",
@@ -49,7 +50,7 @@ def create_directories():
         os.makedirs(directory, exist_ok=True)
         print(f"✅ Created directory: {directory}")
 
-def check_model_files():
+def check_model_files() -> List[str]:
     """Check if model files exist"""
     model_files = {
         "YOLOv9c": "model/face-detection/yolov9c-face-lindevs.onnx",
@@ -71,7 +72,7 @@ def check_model_files():
     
     return missing_models
 
-def install_requirements():
+def install_requirements() -> bool:
     """Install Python requirements"""
     print("📦 Installing Python requirements...")
     
@@ -85,7 +86,7 @@ def install_requirements():
         print(f"❌ Failed to install requirements: {e}")
         return False
 
-def test_imports():
+def test_imports() -> List[str]:
     """Test if critical imports work"""
     critical_imports = [
         "fastapi",
@@ -107,7 +108,7 @@ def test_imports():
     
     return failed_imports
 
-def main():
+def main() -> bool:
     """Main setup function"""
     print("🚀 Face Recognition System Setup")
     print("=" * 50)

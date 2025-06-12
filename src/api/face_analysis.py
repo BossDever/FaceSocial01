@@ -4,7 +4,7 @@ Complete API Endpoints for Face Analysis System
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import cv2
 import numpy as np
 from pydantic import BaseModel
@@ -23,7 +23,7 @@ class DetectionRequest(BaseModel):
     min_quality_threshold: Optional[float] = 40.0
 
 @face_detection_router.get("/face-detection/health")
-async def face_detection_health():
+async def face_detection_health() -> Dict[str, Any]:
     """Health check for face detection service"""
     if face_detection_service is None:
         raise HTTPException(
@@ -45,7 +45,7 @@ async def detect_faces_endpoint(
     iou_threshold: Optional[float] = Form(0.4),
     max_faces: Optional[int] = Form(50),
     min_quality_threshold: Optional[float] = Form(40.0)
-):
+) -> JSONResponse:
     """Detect faces in uploaded image"""
     if face_detection_service is None:
         raise HTTPException(
@@ -77,7 +77,7 @@ async def detect_faces_endpoint(
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
 @face_detection_router.post("/face-detection/detect-base64")
-async def detect_faces_base64(request: DetectionRequest):
+async def detect_faces_base64(request: DetectionRequest) -> JSONResponse:
     """Detect faces in base64 encoded image"""
     if face_detection_service is None:
         raise HTTPException(
@@ -124,7 +124,7 @@ class AddFaceRequest(BaseModel):
     metadata: Optional[dict] = None
 
 @face_recognition_router.get("/face-recognition/health")
-async def face_recognition_health():
+async def face_recognition_health() -> Dict[str, Any]:
     """Health check for face recognition service"""
     if face_recognition_service is None:
         raise HTTPException(
@@ -142,7 +142,7 @@ async def face_recognition_health():
 async def extract_embedding_endpoint(
     file: UploadFile = File(...),
     model_name: Optional[str] = Form("facenet")
-):
+) -> JSONResponse:
     """Extract face embedding from uploaded image"""
     if face_recognition_service is None:
         raise HTTPException(
@@ -174,7 +174,7 @@ async def extract_embedding_endpoint(
         )
 
 @face_recognition_router.post("/face-recognition/recognize")
-async def recognize_face_endpoint(request: RecognitionRequest):
+async def recognize_face_endpoint(request: RecognitionRequest) -> JSONResponse:
     """Recognize face against gallery"""
     if face_recognition_service is None:
         raise HTTPException(
@@ -204,7 +204,7 @@ async def recognize_face_endpoint(request: RecognitionRequest):
         raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
 
 @face_recognition_router.post("/face-recognition/add-face")
-async def add_face_to_database(request: AddFaceRequest):
+async def add_face_to_database(request: AddFaceRequest) -> Dict[str, Any]:
     """Add face to internal database"""
     if face_recognition_service is None:
         raise HTTPException(
@@ -249,7 +249,7 @@ class AnalysisRequest(BaseModel):
     config: Optional[dict] = None
 
 @face_analysis_router.get("/face-analysis/health")
-async def face_analysis_health():
+async def face_analysis_health() -> Dict[str, Any]:
     """Health check for face analysis service"""
     if face_analysis_service is None:
         raise HTTPException(
@@ -275,7 +275,7 @@ async def analyze_faces_endpoint(
     recognition_model: Optional[str] = Form("facenet"),
     confidence_threshold: Optional[float] = Form(0.5),
     max_faces: Optional[int] = Form(50)
-):
+) -> JSONResponse:
     """Comprehensive face analysis"""
     if face_analysis_service is None:
         raise HTTPException(
@@ -325,7 +325,7 @@ async def analyze_faces_endpoint(
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @face_analysis_router.post("/face-analysis/analyze-base64")
-async def analyze_faces_base64(request: AnalysisRequest):
+async def analyze_faces_base64(request: AnalysisRequest) -> JSONResponse:
     """Comprehensive face analysis with base64 image"""
     if face_analysis_service is None:
         raise HTTPException(
@@ -374,7 +374,7 @@ async def batch_analyze_faces(
     files: List[UploadFile] = File(...),
     mode: str = Form("full_analysis"),
     gallery_json: Optional[str] = Form(None)
-):
+) -> JSONResponse:
     """Batch face analysis for multiple images"""
     if face_analysis_service is None:
         raise HTTPException(
