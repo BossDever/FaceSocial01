@@ -28,21 +28,13 @@ logger = get_logger(__name__)
 class FaceRecognitionService:
     """Enhanced Face Recognition Service with Multi-model Support"""
 
-    current_model: Optional[Any]  # ort.InferenceSession if available
-    current_model_type: Optional[RecognitionModel]
-    models_cache: Dict[str, Any]
-    face_database: Dict[str, List[FaceEmbedding]]
-    stats: ModelPerformanceStats
-    model_configs: Dict[RecognitionModel, Dict[str, Union[str, tuple, list, int]]]
-    config: RecognitionConfig
-    vram_manager: Any
-    logger: logging.Logger
-
     def __init__(
         self, vram_manager: Any = None, config: Optional[Dict[str, Any]] = None
     ) -> None:
         self.vram_manager = vram_manager
-        self.logger = logging.getLogger(__name__)        # Parse configuration
+        self.logger = logging.getLogger(__name__)
+
+        # Parse configuration
         if config is None:
             config = {}
 
@@ -62,7 +54,7 @@ class FaceRecognitionService:
         self.models_cache = {}
 
         # Face database - compatible with existing system
-        self.face_database = {}
+        self.face_database: Dict[str, List[FaceEmbedding]] = {}
 
         # Performance tracking
         self.stats = ModelPerformanceStats()
@@ -109,7 +101,7 @@ class FaceRecognitionService:
             if self.current_model_type is None:
                 self.logger.error("❌ Default model type is not set.")
                 return False
-            # self.current_model_type is confirmed to be RecognitionModel here
+            
             success = await self.load_model(self.current_model_type)
             if not success:
                 self.logger.error("❌ Failed to load default model")
@@ -179,7 +171,7 @@ class FaceRecognitionService:
             self.logger.warning(f"Model warmup failed: {e}")
 
     def _cleanup_previous_model(self) -> None:
-        """Clean up previous model and free memory, also reset type."""
+        """Clean up previous model and free memory"""
         if self.current_model is not None:
             model_type_val = (
                 self.current_model_type.value
@@ -193,7 +185,7 @@ class FaceRecognitionService:
                 torch.cuda.empty_cache()
             self.logger.debug("Previous model internal resources released.")
 
-        # Always reset current_model_type to ensure clean state for next load
+        # Reset current_model_type
         if self.current_model_type is not None:
             model_type_val = (
                 self.current_model_type.value
@@ -202,7 +194,7 @@ class FaceRecognitionService:
             )
             self.logger.debug(f"Resetting current model type from {model_type_val}.")
         self.current_model_type = None
-        self.logger.debug("Model state (current_model and current_model_type) reset.")
+        self.logger.debug("Model state reset.")
 
     def _validate_model_config(
         self, model_type: RecognitionModel
@@ -240,34 +232,30 @@ class FaceRecognitionService:
         if not (
             self.config.enable_gpu_optimization
             and TORCH_AVAILABLE
-            and torch is not None  # Check torch object itself
+            and torch is not None
             and torch.cuda.is_available()
         ):
             self.logger.debug(
-                f"CUDA prerequisites not met for {model_type.value} "
-                f"(enable_gpu_opt: {self.config.enable_gpu_optimization}, "
-                f"TORCH_OK: {TORCH_AVAILABLE}, torch!=None: {torch is not None}, "
-                f"cuda_avail: {torch.cuda.is_available() if torch else 'N/A'})."
+                f"CUDA prerequisites not met for {model_type.value}"
             )
             return None
 
         try:
-            # Consider making these configurable if they vary per model or setup
             gpu_mem_limit = int(2 * 1024 * 1024 * 1024)  # 2GB
             cuda_options: Dict[str, Any] = {
-                "device_id": 0,  # Make configurable if multi-GPU
+                "device_id": 0,
                 "arena_extend_strategy": "kSameAsRequested",
                 "gpu_mem_limit": gpu_mem_limit,
                 "cudnn_conv_algo_search": "HEURISTIC",
             }
             self.logger.info(
-                f"🔥 Attempting CUDAProvider for {model_type.value} " +
+                f"🔥 Attempting CUDAProvider for {model_type.value} "
                 f"with {gpu_mem_limit / (1024**2):.0f}MB limit."
             )
             return ("CUDAExecutionProvider", cuda_options)
         except Exception as cuda_error:
             self.logger.warning(
-                f"⚠️ CUDAProvider config failed for {model_type.value}: " +
+                f"⚠️ CUDAProvider config failed for {model_type.value}: "
                 f"{cuda_error}. Will use CPU."
             )
             return None
@@ -285,10 +273,8 @@ class FaceRecognitionService:
                 f"✅ CUDAProvider configured for {model_type.value}."
             )
         else:
-            # Corrected f-string concatenation for logging
             self.logger.info(
-                f"ℹ️ CUDAProvider not added for {model_type.value} "
-                "(unavailable/disabled/error)."
+                f"ℹ️ CUDAProvider not added for {model_type.value}"
             )
 
         providers.append("CPUExecutionProvider")
@@ -299,7 +285,7 @@ class FaceRecognitionService:
         self,
         model_type: RecognitionModel,
         providers: List[Union[str, Tuple[str, Dict[str, Any]]]]
-    ) -> Optional[Any]: # Reverted to Optional[Any] for ort.InferenceSession type hint
+    ) -> Optional[Any]:
         """Creates an ONNX inference session."""
         if not ort:
             self.logger.error("ONNX Runtime not available, cannot create session.")
@@ -327,46 +313,9 @@ class FaceRecognitionService:
             return session
         except Exception as e:
             self.logger.error(
-                f"❌ Failed to create ONNX session for {model_type.value} "
-                f"from {model_path} with providers {providers}: {e}",
+                f"❌ Failed to create ONNX session for {model_type.value}: {e}",
                 exc_info=True
             )
-            # Fallback to CPU if CUDA fails and CPU was not the only option tried
-            provider_names = [p[0] if isinstance(p, tuple) else p for p in providers]
-            if ("CUDAExecutionProvider" in provider_names and
-                    "CPUExecutionProvider" in provider_names):
-                self.logger.warning(
-                    f"Attempting fallback to CPU-only for {model_type.value}"
-                )
-                try:
-                    # Type hint for cpu_providers
-                    cpu_providers: List[Union[str, Tuple[str, Dict[str, Any]]]]
-                    cpu_providers = ["CPUExecutionProvider"]
-                    
-                    if session_options is None:
-                         session_options = self._configure_session_options()
-                         if session_options is None:
-                             self.logger.error(
-                                 "Failed to re-configure session options "
-                                 "for CPU fallback."
-                             )
-                             return None
-
-                    session = ort.InferenceSession(
-                        model_path,
-                        sess_options=session_options,
-                        providers=cpu_providers
-                    )
-                    self.logger.info(
-                        f"ONNX session for {model_type.value} created "
-                        "on CPU after fallback."
-                    )
-                    return session
-                except Exception as e_cpu:
-                    self.logger.error(
-                        f"❌ Fallback to CPU for {model_type.value} failed: {e_cpu}",
-                        exc_info=True
-                    )
             return None
 
     def _preprocess_image(
@@ -391,8 +340,8 @@ class FaceRecognitionService:
             # Normalize
             img_normalized = img_resized.astype(np.float32)
             if model_type == RecognitionModel.FACENET:
-                 img_normalized = (img_normalized - mean[0]) / std[0]
-            else: # General for ArcFace, AdaFace (0-1 range, then (img-mean)/std)
+                img_normalized = (img_normalized - mean[0]) / std[0]
+            else:
                 img_normalized = img_normalized / 255.0
                 img_normalized = (
                     img_normalized - np.array(mean, dtype=np.float32)
@@ -400,7 +349,7 @@ class FaceRecognitionService:
 
             # Transpose to NCHW format
             img_transposed = np.transpose(img_normalized, (2, 0, 1))
-            img_expanded = np.expand_dims(img_transposed, axis=0) # Add batch dim
+            img_expanded = np.expand_dims(img_transposed, axis=0)
             return img_expanded
         except Exception as e:
             self.logger.error(
@@ -418,7 +367,7 @@ class FaceRecognitionService:
             )
             return None
         
-        if not ort: # Safeguard
+        if not ort:
             self.logger.error("ONNX Runtime not available for embedding extraction.")
             return None
 
@@ -450,7 +399,6 @@ class FaceRecognitionService:
                 f"Error extracting embedding with {model_type.value}: {e}",
                 exc_info=True
             )
-            # Use update_extraction_stats
             self.stats.update_extraction_stats(time_taken=0, success=False)
             return None
 
@@ -475,17 +423,7 @@ class FaceRecognitionService:
         person_id: Optional[str] = None,
         model_name: Optional[Union[str, RecognitionModel]] = None,
     ) -> Dict[str, Any]:
-        """
-        Adds a face from an image to the database.
-
-        Args:
-            image_bytes: Bytes of the image file.
-            person_name: Name of the person.
-            person_id: Optional unique ID for the person. If None, uses person_name.
-            model_name: Specific recognition model to use for embedding.
-                        Defaults to current.        Returns:
-            A dictionary containing the result of the operation.
-        """
+        """Add a face from an image to the database."""
         if person_id is None:
             person_id = person_name
 
@@ -498,16 +436,16 @@ class FaceRecognitionService:
             if img_np is None:
                 return {"success": False, "error": "Failed to decode image."}
 
-            current_model_type_to_use = await self._ensure_model_loaded(
-                model_name
-            )
+            current_model_type_to_use = await self._ensure_model_loaded(model_name)
             if current_model_type_to_use is None:
                 return {
                     "success": False,
                     "error": "Failed to load or determine model.",
-                }            # 🆕 Apply Face Enhancement Pipeline for Registration (ปิด augmentation ชั่วคราว)
-            self.logger.info(f"🔄 Processing face with enhancement pipeline for {person_id}")
-            processed_faces = self._process_face_for_registration(img_np, enable_augmentation=False)
+                }
+
+            # Process face for registration
+            self.logger.info(f"🔄 Processing face for {person_id}")
+            processed_faces = await self._process_face_for_registration(img_np)
             
             # Extract embeddings from all processed face variations
             all_embeddings = []
@@ -533,7 +471,7 @@ class FaceRecognitionService:
                 all_embeddings.append({
                     'vector': embedding_vector,
                     'variation_index': i,
-                    'is_original': i == 0  # First one is always the original processed face
+                    'is_original': i == 0
                 })
                 successful_extractions += 1
             
@@ -543,7 +481,7 @@ class FaceRecognitionService:
             
             self.logger.info(f"✅ Successfully extracted {successful_extractions}/{len(processed_faces)} embeddings for {person_id}")
 
-            # Store all embedding variations for better recognition accuracy
+            # Store all embedding variations
             if person_id not in self.face_database:
                 self.face_database[person_id] = []
             
@@ -558,7 +496,7 @@ class FaceRecognitionService:
                     vector=emb_data['vector'],
                     model_type=current_model_type_to_use,
                     extraction_time=time.time(),
-                    quality_score=0.0,  # Could be enhanced with quality assessment
+                    quality_score=0.0,
                     metadata={
                         "original_person_id": person_id,
                         "timestamp": time.time(),
@@ -572,12 +510,12 @@ class FaceRecognitionService:
                 created_face_ids.append(face_id)
 
             self.logger.info(
-                f"✅ Added {len(created_face_ids)} face embeddings for {person_id} (Name: {person_name}) " +
+                f"✅ Added {len(created_face_ids)} face embeddings for {person_id} (Name: {person_name}) "
                 f"using model {current_model_type_to_use.value}."
             )
 
             # Return information about all created embeddings
-            primary_embedding = all_embeddings[0]['vector']  # Use first (original processed) as representative
+            primary_embedding = all_embeddings[0]['vector']
             return {
                 "success": True,
                 "message": "Face added successfully with enhanced processing.",
@@ -602,16 +540,14 @@ class FaceRecognitionService:
         self, image_bytes: bytes, person_id_for_log: str
     ) -> Optional[np.ndarray]:
         """Decodes image bytes into a NumPy array."""
-        log_msg_prefix = f"Decoding image for {person_id_for_log}."
-        img_len = len(image_bytes) if isinstance(image_bytes, bytes) else 'N/A'
-        self.logger.debug(f"{log_msg_prefix} Type: {type(image_bytes)}, Len: {img_len}")
-        if not isinstance(image_bytes, bytes):
-            self.logger.error(
-                f"Invalid image_bytes type: {type(image_bytes)} " +
-                f"for {person_id_for_log}"
-            )
-            return None
         try:
+            if not isinstance(image_bytes, bytes):
+                self.logger.error(
+                    f"Invalid image_bytes type: {type(image_bytes)} "
+                    f"for {person_id_for_log}"
+                )
+                return None
+            
             img_buffer = np.frombuffer(image_bytes, np.uint8)
             img_np = cv2.imdecode(img_buffer, cv2.IMREAD_COLOR)
             if img_np is None:
@@ -629,10 +565,6 @@ class FaceRecognitionService:
         self, model_name: Optional[Union[str, RecognitionModel]]
     ) -> Optional[RecognitionModel]:
         """Ensures the correct model is loaded, switching if necessary."""
-        self.logger.info(f"🔍 _ensure_model_loaded called with model_name: {model_name}")
-        self.logger.info(f"🔍 Current model type: {self.current_model_type}")
-        self.logger.info(f"🔍 Current model exists: {self.current_model is not None}")
-        
         target_model_type: Optional[RecognitionModel] = None
         if model_name:
             if isinstance(model_name, RecognitionModel):
@@ -644,8 +576,6 @@ class FaceRecognitionService:
                     self.logger.error(f"Invalid model_name: {model_name} provided.")
                     return None
         
-        self.logger.info(f"🔍 Target model type: {target_model_type}")
-        
         load_needed = False
         model_to_load: Optional[RecognitionModel] = None
 
@@ -653,11 +583,9 @@ class FaceRecognitionService:
             if not self.current_model or self.current_model_type != target_model_type:
                 load_needed = True
                 model_to_load = target_model_type
-                self.logger.info(f"🔍 Model switch needed: current={self.current_model_type}, target={target_model_type}")
         elif not self.current_model:
             load_needed = True
             model_to_load = self.config.preferred_model
-            self.logger.info(f"🔍 No current model, loading preferred: {model_to_load}")
 
         if load_needed and model_to_load:
             self.logger.info(f"Attempting to load model: {model_to_load.value}.")
@@ -665,46 +593,98 @@ class FaceRecognitionService:
                 self.logger.error(f"Failed to load model {model_to_load.value}.")
                 return None
         
-        self.logger.info(f"🔍 Returning current model type: {self.current_model_type}")
         return self.current_model_type
 
-    def _process_recognized_image(
-        self,
-        img_np: np.ndarray,
-        current_model_type_to_use: RecognitionModel
-    ) -> Optional[np.ndarray]:
-        """Helper to preprocess and extract embedding for recognize_faces."""
-        preprocessed_image = self._preprocess_image(
-            img_np, current_model_type_to_use
-        )
-        if preprocessed_image is None:
-            self.logger.error("Image preprocessing failed during recognition.")
-            return None
+    async def _process_face_for_registration(self, face_image: np.ndarray) -> List[np.ndarray]:
+        """Process face for registration with quality enhancement"""
+        try:
+            self.logger.info("🔄 Starting face processing for registration...")
+            
+            # Step 1: Face Preprocessing
+            preprocessed_face = self._face_preprocessing(face_image)
+            
+            # Step 2: Face Pose Normalization
+            normalized_face = self._face_pose_normalization(preprocessed_face)
+            
+            # Return processed faces (simplified for now)
+            return [normalized_face]
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error in face processing for registration: {e}")
+            return [face_image]
 
-        embedding_vector = self._extract_embedding(
-            preprocessed_image, current_model_type_to_use
-        )
-        if embedding_vector is None:
-            self.logger.error("Embedding extraction failed during recognition.")
-            return None
-        return embedding_vector
+    def _face_preprocessing(self, face_image: np.ndarray) -> np.ndarray:
+        """Face preprocessing with noise reduction and contrast enhancement"""
+        try:
+            # Noise reduction using Non-local Means Denoising
+            if len(face_image.shape) == 3:
+                denoised = cv2.fastNlMeansDenoisingColored(face_image, None, 10, 10, 7, 21)
+            else:
+                denoised = cv2.fastNlMeansDenoising(face_image, None, 10, 7, 21)
+            
+            # Contrast enhancement using CLAHE
+            if len(denoised.shape) == 3:
+                lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
+                l_channel, a_channel, b_channel = cv2.split(lab)
+                
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                l_channel = clahe.apply(l_channel)
+                
+                enhanced = cv2.merge([l_channel, a_channel, b_channel])
+                enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+            else:
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                enhanced = clahe.apply(denoised)
+            
+            # Sharpening filter
+            kernel = np.array([[-1, -1, -1],
+                             [-1,  9, -1],
+                             [-1, -1, -1]])
+            sharpened = cv2.filter2D(enhanced, -1, kernel)
+            
+            # Blend original and processed image
+            result = cv2.addWeighted(enhanced, 0.8, sharpened, 0.2, 0)
+            
+            self.logger.debug("Face preprocessing completed successfully")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error in face preprocessing: {e}")
+            return face_image
+
+    def _face_pose_normalization(self, face_image: np.ndarray) -> np.ndarray:
+        """Face pose normalization with histogram equalization"""
+        try:
+            # Convert to grayscale for pose analysis
+            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY) if len(face_image.shape) == 3 else face_image
+            
+            # Apply histogram equalization to normalize lighting
+            equalized = cv2.equalizeHist(gray)
+            
+            # Convert back to BGR if original was color
+            if len(face_image.shape) == 3:
+                normalized_face = cv2.cvtColor(equalized, cv2.COLOR_GRAY2BGR)
+                # Blend with original to maintain color information
+                normalized_face = cv2.addWeighted(face_image, 0.7, normalized_face, 0.3, 0)
+            else:
+                normalized_face = equalized
+            
+            # Apply bilateral filter to smooth while preserving edges
+            normalized_face = cv2.bilateralFilter(normalized_face, 9, 75, 75)
+            
+            self.logger.debug("Face pose normalization completed successfully")
+            return normalized_face
+            
+        except Exception as e:
+            self.logger.error(f"Error in face pose normalization: {e}")
+            return face_image
 
     async def recognize_faces(
         self,
         image_bytes: bytes,
         model_name: Optional[Union[str, RecognitionModel]] = None,
     ) -> Dict[str, Any]:
-        """
-        Recognize faces in an image.
-
-        Args:
-            image_bytes: Bytes of the image file.
-            model_name: Specific recognition model to use.
-                        Defaults to current model.
-
-        Returns:
-            A dictionary containing the recognition results.
-        """
+        """Recognize faces in an image."""
         self.logger.info(f"Recognizing faces in image ({len(image_bytes)} bytes).")
 
         try:
@@ -719,7 +699,7 @@ class FaceRecognitionService:
                     "error": "Failed to load model for recognition.",
                 }
 
-            emb_vector = self._process_recognized_image(
+            emb_vector = await self._process_recognized_image(
                 img_np, current_model_type_to_use
             )
             if emb_vector is None:
@@ -741,8 +721,6 @@ class FaceRecognitionService:
             results = sorted(results, key=lambda x: x["similarity"], reverse=True)
 
             top_result = results[0]
-            # is_known = top_result["similarity"] >= self.config.similarity_threshold
-            # This is always true due to the earlier filter
 
             self.logger.info(
                 f"Top match for recognition: Person ID {top_result['person_id']}, "
@@ -752,8 +730,8 @@ class FaceRecognitionService:
 
             return {
                 "success": True,
-                "results": results, # Return all sorted results
-                "top_match": top_result, # Explicitly include top match
+                "results": results,
+                "top_match": top_result,
                 "message": f"Found {len(results)} potential match(es).",
             }
 
@@ -763,29 +741,34 @@ class FaceRecognitionService:
             )
             return {"success": False, "error": f"Unexpected error: {str(e)}"}
 
+    async def _process_recognized_image(
+        self,
+        img_np: np.ndarray,
+        current_model_type_to_use: RecognitionModel
+    ) -> Optional[np.ndarray]:
+        """Helper to preprocess and extract embedding for recognize_faces."""
+        preprocessed_image = self._preprocess_image(
+            img_np, current_model_type_to_use
+        )
+        if preprocessed_image is None:
+            self.logger.error("Image preprocessing failed during recognition.")
+            return None
+
+        embedding_vector = self._extract_embedding(
+            preprocessed_image, current_model_type_to_use
+        )
+        if embedding_vector is None:
+            self.logger.error("Embedding extraction failed during recognition.")
+            return None
+        return embedding_vector
+
     async def recognize_faces_with_gallery(
         self,
         image_bytes: bytes,
         gallery: Dict[str, Any],
         model_name: Optional[Union[str, RecognitionModel]] = None,
     ) -> Dict[str, Any]:
-        """
-        Recognize faces using external gallery instead of internal database.
-
-        Args:
-            image_bytes: Bytes of the image file.
-            gallery: External gallery data in format:
-                    {
-                        "person_id": {
-                            "name": "Person Name",
-                            "embeddings": [[embedding1], [embedding2], ...]
-                        }
-                    }
-            model_name: Specific recognition model to use.
-
-        Returns:
-            A dictionary containing the recognition results.
-        """
+        """Recognize faces using external gallery instead of internal database."""
         logger.info(
             f"Recognizing faces with external gallery ({len(image_bytes)} bytes, "
             f"{len(gallery)} people)."
@@ -807,7 +790,7 @@ class FaceRecognitionService:
                 }
 
             embed_start_time = time.time()
-            emb_vector = self._process_recognized_image(
+            emb_vector = await self._process_recognized_image(
                 img_np, current_model_type_to_use
             )
             embedding_time = time.time() - embed_start_time
@@ -876,7 +859,6 @@ class FaceRecognitionService:
         """Compares a single query embedding against all persons and their embeddings in a gallery."""
         matches: List[Dict[str, Any]] = []
         if not isinstance(gallery, dict):
-            # logger.error("Gallery is not a dictionary, skipping gallery comparison.")
             return matches
 
         # Ensure query_embedding is a 1D numpy array
@@ -885,16 +867,12 @@ class FaceRecognitionService:
 
         for person_id, person_data in gallery.items():
             if not isinstance(person_data, dict):
-                # logger.warning(f"Data for person {person_id} is not a dict, skipping.")
                 continue
 
             name = person_data.get("name", person_id)
             embeddings_data = person_data.get("embeddings")
 
-            # logger.debug(f"Processing gallery person: {person_id}, Name: {name}")
-
             if embeddings_data is None:
-                # logger.warning(f"No embeddings found for person {person_id}, skipping.")
                 continue
 
             best_match_for_person = self._compare_single_embedding_to_gallery_person(
@@ -905,87 +883,7 @@ class FaceRecognitionService:
         
         # Sort matches by similarity, highest first
         matches.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
-        # logger.debug(f"Found {len(matches)} potential matches in gallery for query.")
         return matches
-
-    # pylint: disable=too-complex
-    def _process_single_gallery_embedding(
-        self,
-        query_embedding: np.ndarray,
-        gallery_embedding_data: Any,
-        person_id: str,
-        embedding_index: int,  # For logging/debugging
-    ) -> Optional[Dict[str, Any]]:
-        """Processes a single gallery embedding against the query embedding."""
-        try:
-            if isinstance(gallery_embedding_data, dict):
-                # Handle structured embedding (e.g., {"embedding": [...], "source": "..."})
-                actual_embedding = gallery_embedding_data.get("embedding")
-                # embedding_source = gallery_embedding_data.get("source", "unknown")
-            elif isinstance(gallery_embedding_data, (list, np.ndarray)):
-                actual_embedding = gallery_embedding_data
-                # embedding_source = "direct_list_or_array"
-            else:
-                return None
-
-            if actual_embedding is None:
-                # logger.warning(f\"Actual embedding is None for {person_id} at index {embedding_index}\")
-                return None
-
-            gallery_embedding_np = np.array(actual_embedding, dtype=np.float32)
-
-            if gallery_embedding_np.ndim == 0: # Scalar, not a valid embedding
-                # logger.warning(f\"Skipping scalar emb for {person_id}, idx {embedding_index}\")
-                return None
-
-            gallery_embedding_normalized = self._normalize_embedding(gallery_embedding_np)
-
-            if gallery_embedding_normalized is None:
-                # logger.warning(f\"Normalization failed for {person_id} at index {embedding_index}\")
-                return None
-            
-            if gallery_embedding_normalized.ndim > 1:
-                gallery_embedding_normalized = gallery_embedding_normalized.flatten()
-            if query_embedding.ndim > 1: # Should be pre-flattened, but ensure
-                query_embedding = query_embedding.flatten()
-
-            # Ensure both embeddings are 1D and have compatible shapes for cosine similarity
-            if gallery_embedding_normalized.ndim != 1 or query_embedding.ndim != 1:
-                # logger.error(
-                #     f\"Embeddings for {person_id} (idx {embedding_index}) or query have incorrect \"
-                #     f\"dimensions after flattening. Gallery: {gallery_embedding_normalized.ndim}D, \"
-                #     f\"Query: {query_embedding.ndim}D. Skipping.\"
-                # )
-                return None
-            
-            # Cosine similarity expects 1D vectors.
-            # If model produces 2D [1, dim], flatten.
-            # Handled by flatten calls above.
-
-            similarity = self._cosine_similarity(
-                query_embedding, gallery_embedding_normalized
-            )
-
-            # logger.debug(
-            #     f\"Similarity for {person_id} (idx {embedding_index}, \"
-            #     f\"source: {embedding_source}): {similarity}\"
-            # )
-
-            if similarity >= self.config.unknown_threshold:
-                return {
-                    "person_id": person_id,
-                    "name": person_id, # Placeholder, actual name should be from gallery structure
-                    "similarity": float(similarity),
-                    "match_type": "gallery",
-                    # "embedding_source": embedding_source,
-                }
-        except Exception as e: # pylint: disable=broad-except, unused-variable
-            # logger.error(
-            #     f\"Error processing gallery embedding for {person_id} at index {embedding_index}: {e}\",
-            #     exc_info=True
-            # )
-            pass # Instead of return None, let it fall through or handle specific exceptions
-        return None
 
     def _compare_single_embedding_to_gallery_person(
         self,
@@ -996,16 +894,10 @@ class FaceRecognitionService:
     ) -> Optional[Dict[str, Any]]:
         """Compares query embedding to all embeddings of a single person from the gallery."""
         best_match_for_person: Optional[Dict[str, Any]] = None
-        highest_similarity_for_person = self.config.unknown_threshold - 0.01 # Start below threshold
+        highest_similarity_for_person = self.config.unknown_threshold - 0.01
 
-        if isinstance(embeddings_to_check, list): # List of embeddings
+        if isinstance(embeddings_to_check, list):
             for embedding_index, gallery_embedding_data in enumerate(embeddings_to_check):
-                # pylint: disable=line-too-long
-                # logger.debug(f\"Comparing query to {current_person_id} embedding \"
-                #              f\"{embedding_index + 1}/{len(embeddings_to_check)} with type \"
-                #              f\"{type(gallery_embedding_data)}\")
-                # pylint: enable=line-too-long
-
                 match_details = self._process_single_gallery_embedding(
                     query_embedding, gallery_embedding_data, current_person_id, embedding_index
                 )
@@ -1014,29 +906,73 @@ class FaceRecognitionService:
                         match_details["similarity"] > highest_similarity_for_person):
                     highest_similarity_for_person = match_details["similarity"]
                     best_match_for_person = match_details
-                    if best_match_for_person: # Ensure it's not None
-                        best_match_for_person["name"] = current_person_name # Set correct name
-
-        elif isinstance(embeddings_to_check, dict):  # Single embedding dictionary
-            # TODO: handle single embedding dict similar to list case
-            pass
+                    if best_match_for_person:
+                        best_match_for_person["name"] = current_person_name
 
         return best_match_for_person
+
+    def _process_single_gallery_embedding(
+        self,
+        query_embedding: np.ndarray,
+        gallery_embedding_data: Any,
+        person_id: str,
+        embedding_index: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Processes a single gallery embedding against the query embedding."""
+        try:
+            if isinstance(gallery_embedding_data, dict):
+                actual_embedding = gallery_embedding_data.get("embedding")
+            elif isinstance(gallery_embedding_data, (list, np.ndarray)):
+                actual_embedding = gallery_embedding_data
+            else:
+                return None
+
+            if actual_embedding is None:
+                return None
+
+            gallery_embedding_np = np.array(actual_embedding, dtype=np.float32)
+
+            if gallery_embedding_np.ndim == 0:
+                return None
+
+            gallery_embedding_normalized = self._normalize_embedding(gallery_embedding_np)
+
+            if gallery_embedding_normalized is None:
+                return None
+            
+            if gallery_embedding_normalized.ndim > 1:
+                gallery_embedding_normalized = gallery_embedding_normalized.flatten()
+            if query_embedding.ndim > 1:
+                query_embedding = query_embedding.flatten()
+
+            if gallery_embedding_normalized.ndim != 1 or query_embedding.ndim != 1:
+                return None
+
+            similarity = self._cosine_similarity(
+                query_embedding, gallery_embedding_normalized
+            )
+
+            if similarity >= self.config.unknown_threshold:
+                return {
+                    "person_id": person_id,
+                    "name": person_id,
+                    "similarity": float(similarity),
+                    "match_type": "gallery",
+                }
+        except Exception:
+            pass
+        return None
 
     def _cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Calculate cosine similarity between two embeddings"""
         try:
-            # Ensure both embeddings are normalized (unit vectors)
             norm1 = np.linalg.norm(embedding1)
             norm2 = np.linalg.norm(embedding2)
             
             if norm1 == 0 or norm2 == 0:
                 return 0.0
             
-            # Calculate cosine similarity
             similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
-            
-            # Ensure similarity is in valid range [-1, 1]
             return float(np.clip(similarity, -1.0, 1.0))
             
         except Exception as e:
@@ -1098,165 +1034,6 @@ class FaceRecognitionService:
         
         return matches
 
-    # Face Enhancement Methods for Registration
-    def _face_pose_normalization(self, face_image: np.ndarray) -> np.ndarray:
-        """
-        ปรับมุมท่าทางใบหน้าให้เป็นมาตรฐาน
-        Face Pose Normalization - การปรับมุมท่าทางใบหน้าให้เป็นมาตรฐาน
-        """
-        try:
-            # Detect facial landmarks for pose estimation
-            height, width = face_image.shape[:2]
-            
-            # Simple pose normalization using histogram equalization and contrast adjustment
-            # Convert to grayscale for pose analysis
-            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY) if len(face_image.shape) == 3 else face_image
-            
-            # Apply histogram equalization to normalize lighting
-            equalized = cv2.equalizeHist(gray)
-            
-            # Convert back to BGR if original was color
-            if len(face_image.shape) == 3:
-                normalized_face = cv2.cvtColor(equalized, cv2.COLOR_GRAY2BGR)
-                # Blend with original to maintain color information
-                normalized_face = cv2.addWeighted(face_image, 0.7, normalized_face, 0.3, 0)
-            else:
-                normalized_face = equalized
-            
-            # Apply bilateral filter to smooth while preserving edges
-            normalized_face = cv2.bilateralFilter(normalized_face, 9, 75, 75)
-            
-            self.logger.debug("Face pose normalization completed successfully")
-            return normalized_face
-            
-        except Exception as e:
-            self.logger.error(f"Error in face pose normalization: {e}")
-            return face_image  # Return original if normalization fails
-
-    def _face_preprocessing(self, face_image: np.ndarray) -> np.ndarray:
-        """
-        การประมวลผลเบื้องต้นของใบหน้า
-        Face Preprocessing - การประมวลผลเบื้องต้นของใบหน้า
-        """
-        try:
-            # 1. Noise reduction using Non-local Means Denoising
-            if len(face_image.shape) == 3:
-                denoised = cv2.fastNlMeansDenoisingColored(face_image, None, 10, 10, 7, 21)
-            else:
-                denoised = cv2.fastNlMeansDenoising(face_image, None, 10, 7, 21)
-            
-            # 2. Contrast enhancement using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            if len(denoised.shape) == 3:
-                # Convert to LAB color space for better contrast enhancement
-                lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
-                l_channel, a_channel, b_channel = cv2.split(lab)
-                
-                # Apply CLAHE to L channel
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                l_channel = clahe.apply(l_channel)
-                
-                # Merge channels back
-                enhanced = cv2.merge([l_channel, a_channel, b_channel])
-                enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
-            else:
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                enhanced = clahe.apply(denoised)
-            
-            # 3. Sharpening filter
-            kernel = np.array([[-1, -1, -1],
-                             [-1,  9, -1],
-                             [-1, -1, -1]])
-            sharpened = cv2.filter2D(enhanced, -1, kernel)
-            
-            # 4. Blend original and processed image
-            result = cv2.addWeighted(enhanced, 0.8, sharpened, 0.2, 0)
-            
-            self.logger.debug("Face preprocessing completed successfully")
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Error in face preprocessing: {e}")
-            return face_image  # Return original if preprocessing fails
-
-    def _face_data_augmentation(self, face_image: np.ndarray) -> List[np.ndarray]:
-        """
-        การเพิ่มข้อมูลใบหน้า
-        Face Data Augmentation - การเพิ่มข้อมูลใบหน้าสำหรับเพิ่มความแม่นยำ
-        """
-        augmented_faces = [face_image]  # Original image
-        
-        try:
-            height, width = face_image.shape[:2]
-            
-            # 1. Brightness variations
-            for brightness_delta in [-20, -10, 10, 20]:
-                bright_face = cv2.convertScaleAbs(face_image, alpha=1.0, beta=brightness_delta)
-                augmented_faces.append(bright_face)
-            
-            # 2. Contrast variations
-            for contrast_alpha in [0.8, 0.9, 1.1, 1.2]:
-                contrast_face = cv2.convertScaleAbs(face_image, alpha=contrast_alpha, beta=0)
-                augmented_faces.append(contrast_face)
-            
-            # 3. Small rotations (-10 to +10 degrees)
-            for angle in [-10, -5, 5, 10]:
-                center = (width // 2, height // 2)
-                rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-                rotated_face = cv2.warpAffine(face_image, rotation_matrix, (width, height))
-                augmented_faces.append(rotated_face)
-            
-            # 4. Small translations
-            for tx, ty in [(-5, 0), (5, 0), (0, -5), (0, 5)]:
-                translation_matrix = np.float32([[1, 0, tx], [0, 1, ty]])
-                translated_face = cv2.warpAffine(face_image, translation_matrix, (width, height))
-                augmented_faces.append(translated_face)
-            
-            # 5. Gaussian noise (subtle)
-            noise = np.random.normal(0, 10, face_image.shape).astype(np.uint8)
-            noisy_face = cv2.add(face_image, noise)
-            augmented_faces.append(noisy_face)
-            
-            # 6. Gaussian blur (very light)
-            blurred_face = cv2.GaussianBlur(face_image, (3, 3), 0.5)
-            augmented_faces.append(blurred_face)
-            
-            self.logger.info(f"Generated {len(augmented_faces)} augmented face variations")
-            return augmented_faces
-            
-        except Exception as e:
-            self.logger.error(f"Error in face data augmentation: {e}")
-            return [face_image]  # Return original if augmentation fails
-
-    def _process_face_for_registration(self, face_image: np.ndarray, enable_augmentation: bool = True) -> List[np.ndarray]:
-        """
-        ประมวลผลใบหน้าสำหรับการลงทะเบียนด้วยการปรับปรุงคุณภาพและเพิ่มข้อมูล
-        Process face for registration with quality enhancement and data augmentation
-        """
-        try:
-            self.logger.info("🔄 Starting face processing for registration...")
-            
-            # Step 1: Face Preprocessing - การประมวลผลเบื้องต้น
-            self.logger.debug("Step 1: Face Preprocessing")
-            preprocessed_face = self._face_preprocessing(face_image)
-            
-            # Step 2: Face Pose Normalization - การปรับมุมท่าทาง
-            self.logger.debug("Step 2: Face Pose Normalization")
-            normalized_face = self._face_pose_normalization(preprocessed_face)
-            
-            # Step 3: Face Data Augmentation - การเพิ่มข้อมูล (ถ้าเปิดใช้งาน)
-            if enable_augmentation:
-                self.logger.debug("Step 3: Face Data Augmentation")
-                augmented_faces = self._face_data_augmentation(normalized_face)
-                self.logger.info(f"✅ Face processing completed with {len(augmented_faces)} variations")
-                return augmented_faces
-            else:
-                self.logger.info("✅ Face processing completed (no augmentation)")
-                return [normalized_face]
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error in face processing for registration: {e}")
-            return [face_image]  # Return original if all processing fails
-
     def get_service_info(self) -> Dict[str, Any]:
         """Get comprehensive service information for health check"""
         try:
@@ -1313,3 +1090,21 @@ class FaceRecognitionService:
                 "performance_stats": {},
                 "configuration": {}
             }
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics"""
+        try:
+            return self.stats.to_dict()
+        except Exception as e:
+            self.logger.error(f"Error getting performance stats: {e}")
+            return {}
+
+    async def shutdown(self) -> None:
+        """Shutdown the service and release resources"""
+        try:
+            self.logger.info("Shutting down Face Recognition Service...")
+            self._cleanup_previous_model()
+            self.face_database.clear()
+            self.logger.info("Face Recognition Service shut down successfully.")
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")

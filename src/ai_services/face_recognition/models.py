@@ -106,8 +106,10 @@ class FaceEmbedding:
     face_bbox: Optional[List[int]] = None
     # Landmark points of the face
     landmarks: Optional[List[List[int]]] = None
+    # Face quality assessment
+    face_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.vector is not None:
             self.dimension = self.vector.shape[0]
             # Example: Check if vector is L2 normalized (sum of squares is close to 1)
@@ -153,6 +155,7 @@ class FaceEmbedding:
             "source_image_hash": self.source_image_hash,
             "face_bbox": self.face_bbox,
             "landmarks": self.landmarks,
+            "face_quality": self.face_quality.value,
         }
         return data
 
@@ -169,6 +172,13 @@ class FaceEmbedding:
                 # Log or handle if model_type_str not valid enum member
                 # print(f"Warn: '{model_type_str}' from dict not valid enum.")
                 pass # Keep as None or use a default if desired
+
+        face_quality_str = data.get("face_quality", "unknown")
+        face_quality_enum = RecognitionQuality.UNKNOWN
+        try:
+            face_quality_enum = RecognitionQuality(face_quality_str)
+        except ValueError:
+            pass
 
         return cls(
             id=data["id"],
@@ -187,6 +197,7 @@ class FaceEmbedding:
             source_image_hash=data.get("source_image_hash"),
             face_bbox=data.get("face_bbox"),
             landmarks=data.get("landmarks"),
+            face_quality=face_quality_enum,
         )
 
 
@@ -209,8 +220,10 @@ class FaceMatch:
     identity_id: str = field(init=False)
     similarity: float = field(init=False)
     is_match: bool = field(init=False)
+    identity_name: Optional[str] = None
+    person_name: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Set legacy fields for backward compatibility
         self.identity_id = self.person_id
         self.similarity = self.confidence
@@ -234,6 +247,7 @@ class FaceMatch:
         """แปลงเป็น dictionary สำหรับ JSON serialization"""
         return {
             "person_id": self.person_id,
+            "person_name": self.person_name,
             "confidence": float(self.confidence),
             "similarity_score": float(self.similarity_score),
             "distance": float(self.distance),
@@ -243,6 +257,7 @@ class FaceMatch:
             "is_match": bool(self.is_match),
             # Legacy fields
             "identity_id": self.identity_id,
+            "identity_name": self.identity_name,
             "similarity": float(self.similarity),
         }
 
@@ -268,7 +283,7 @@ class FaceComparisonResult:
     is_match: bool = field(init=False)
     success: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Set legacy fields for backward compatibility
         self.is_match = self.is_same_person
         self.success = self.error is None
@@ -322,7 +337,7 @@ class FaceRecognitionResult:
     success: bool = True
     embedding_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.success = self.error is None
 
         # Set total candidates
@@ -369,103 +384,6 @@ class FaceRecognitionResult:
             result["query_embedding"] = self.query_embedding.to_dict()
 
         return result
-
-
-@dataclass
-class ModelPerformanceStats:
-    """สถิติประสิทธิภาพของโมเดลการจดจำใบหน้า - Enhanced"""
-
-    model_type: Optional[RecognitionModel] = None
-    total_embeddings_extracted: int = 0
-    failed_embeddings_count: int = 0  # Corrected attribute name
-    total_recognitions: int = 0
-    successful_recognitions: int = 0
-    total_extraction_time: float = 0.0
-    total_comparison_time: float = 0.0
-    average_extraction_time: float = 0.0
-    average_comparison_time: float = 0.0
-
-    # Enhanced metrics
-    successful_extractions: int = 0
-    failed_extractions: int = 0
-    high_quality_embeddings: int = 0
-    gpu_usage_time: float = 0.0
-    cpu_usage_time: float = 0.0
-    memory_peak_usage: float = 0.0
-
-    def update_extraction_stats(
-        self,
-        time_taken: float,
-        success: bool = True,
-        quality: RecognitionQuality = RecognitionQuality.UNKNOWN,
-    ) -> None:
-        """อัปเดตสถิติการสกัด embedding"""
-        self.total_embeddings_extracted += 1
-        self.total_extraction_time += time_taken
-        self.average_extraction_time = (
-            self.total_extraction_time / self.total_embeddings_extracted
-        )
-
-        if success:
-            self.successful_extractions += 1
-        else:
-            self.failed_extractions += 1
-
-        if quality == RecognitionQuality.HIGH:
-            self.high_quality_embeddings += 1
-
-    def update_comparison_stats(self, time_taken: float) -> None:
-        """อัปเดตสถิติการเปรียบเทียบใบหน้า"""
-        self.total_comparisons += 1
-        self.total_comparison_time += time_taken
-        self.average_comparison_time = (
-            self.total_comparison_time / self.total_comparisons
-        )
-
-    def update_device_usage(self, time_taken: float, device: str) -> None:
-        """อัปเดตสถิติการใช้งานอุปกรณ์"""
-        if device.lower() == "cuda" or device.lower() == "gpu":
-            self.gpu_usage_time += time_taken
-        else:
-            self.cpu_usage_time += time_taken
-
-    @property
-    def success_rate(self) -> float:
-        """อัตราความสำเร็จของการสกัด embedding"""
-        total = self.total_embeddings_extracted
-        return (self.successful_extractions / total) if total > 0 else 0.0
-
-    @property
-    def high_quality_rate(self) -> float:
-        """อัตรา embedding คุณภาพสูง"""
-        total = self.successful_extractions
-        return (self.high_quality_embeddings / total) if total > 0 else 0.0
-
-    @property
-    def gpu_usage_ratio(self) -> float:
-        """สัดส่วนการใช้ GPU"""
-        total_time = self.gpu_usage_time + self.cpu_usage_time
-        return (self.gpu_usage_time / total_time) if total_time > 0 else 0.0
-
-    def to_dict(self) -> Dict[str, Any]:
-        """แปลงเป็น dictionary สำหรับ JSON serialization"""
-        return {
-            "total_embeddings_extracted": self.total_embeddings_extracted,
-            "total_comparisons": self.total_comparisons,
-            "total_extraction_time": float(self.total_extraction_time),
-            "total_comparison_time": float(self.total_comparison_time),
-            "average_extraction_time": float(self.average_extraction_time),
-            "average_comparison_time": float(self.average_comparison_time),
-            "successful_extractions": self.successful_extractions,
-            "failed_extractions": self.failed_extractions,
-            "high_quality_embeddings": self.high_quality_embeddings,
-            "success_rate": float(self.success_rate),
-            "high_quality_rate": float(self.high_quality_rate),
-            "gpu_usage_time": float(self.gpu_usage_time),
-            "cpu_usage_time": float(self.cpu_usage_time),
-            "gpu_usage_ratio": float(self.gpu_usage_ratio),
-            "memory_peak_usage": float(self.memory_peak_usage),
-        }
 
 
 @dataclass

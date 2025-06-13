@@ -12,39 +12,43 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Tuple
 import numpy as np
 from enum import Enum
-from pydantic import BaseModel  # Add pydantic BaseModel
+from pydantic import BaseModel
+import time
+import cv2
 
 # Import related models
 try:
-    from src.ai_services.face_detection import models as face_detection_models
-    from src.ai_services.face_recognition import models as face_recognition_models
-    DetectionConfig = face_detection_models.DetectionConfig
-    DetectionEngine = face_detection_models.DetectionEngine
-    RecognitionModel = face_recognition_models.RecognitionModel
-    RecognitionQuality = face_recognition_models.RecognitionQuality
+    from ..face_detection.utils import BoundingBox
+    DETECTION_UTILS_AVAILABLE = True
 except ImportError:
-    # Fallback definitions
-    class DetectionEngine(Enum):
-        YOLOV9C = "yolov9c"
-        YOLOV9E = "yolov9e"
-        YOLOV11M = "yolov11m"
-        AUTO = "auto"
+    DETECTION_UTILS_AVAILABLE = False
+    # Fallback BoundingBox definition
+    @dataclass
+    class BoundingBox:
+        x1: float
+        y1: float
+        x2: float
+        y2: float
+        confidence: float
+        
+        def to_dict(self) -> Dict[str, Any]:
+            return {
+                "x1": float(self.x1),
+                "y1": float(self.y1),
+                "x2": float(self.x2),
+                "y2": float(self.y2),
+                "confidence": float(self.confidence)
+            }
 
+try:
+    from ..face_recognition.models import RecognitionModel
+    RECOGNITION_MODELS_AVAILABLE = True
+except ImportError:
+    RECOGNITION_MODELS_AVAILABLE = False
     class RecognitionModel(Enum):
         ADAFACE = "adaface"
         ARCFACE = "arcface"
         FACENET = "facenet"
-
-    class RecognitionQuality(Enum):
-        HIGH = "high"
-        MEDIUM = "medium"
-        LOW = "low"
-        UNKNOWN = "unknown"
-
-    @dataclass
-    class DetectionConfig:
-        engine: DetectionEngine = DetectionEngine.AUTO
-        confidence_threshold: float = 0.5
 
 
 class AnalysisMode(Enum):
@@ -65,6 +69,24 @@ class QualityLevel(Enum):
     FAST = "fast"  # เร็ว - ลดคุณภาพเพื่อความเร็ว
 
 
+class DetectionEngine(Enum):
+    """Detection engines available"""
+    YOLOV9C = "yolov9c"
+    YOLOV9E = "yolov9e"
+    YOLOV11M = "yolov11m"
+    AUTO = "auto"
+
+
+@dataclass
+class DetectionConfig:
+    """Configuration for face detection"""
+    engine: DetectionEngine = DetectionEngine.AUTO
+    confidence_threshold: float = 0.5
+    iou_threshold: float = 0.4
+    min_face_size: int = 32
+    max_faces: int = 50
+
+
 @dataclass
 class AnalysisConfig:
     """การตั้งค่าการวิเคราะห์แบบครบวงจร"""
@@ -83,6 +105,7 @@ class AnalysisConfig:
     recognition_model: Optional[str] = None  # auto-select if None
     enable_embedding_extraction: bool = True
     enable_gallery_matching: bool = True
+    enable_database_matching: bool = True
     gallery_top_k: int = 5
 
     # Performance settings
@@ -95,21 +118,26 @@ class AnalysisConfig:
     return_face_crops: bool = False
     return_embeddings: bool = False
     return_detailed_stats: bool = True
+    
+    # Image processing settings
+    recognition_image_format: str = "jpg"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization validation and defaults"""
         # Set default detection config if not provided
         if self.detection_config is None:
             self.detection_config = DetectionConfig(
                 engine=DetectionEngine.AUTO,
                 confidence_threshold=self.confidence_threshold,
-            )        # Set default recognition config if not provided
+            )
+
+        # Set default recognition config if not provided
         if self.recognition_config is None and self.mode in [
             AnalysisMode.FULL_ANALYSIS,
             AnalysisMode.COMPREHENSIVE,
         ]:
             self.recognition_config = {
-                "model": RecognitionModel.FACENET,
+                "model": RecognitionModel.FACENET if RECOGNITION_MODELS_AVAILABLE else "facenet",
                 "threshold": 0.6,
                 "return_embeddings": self.return_embeddings,
             }
@@ -146,10 +174,13 @@ class AnalysisConfig:
             "return_face_crops": self.return_face_crops,
             "return_embeddings": self.return_embeddings,
             "return_detailed_stats": self.return_detailed_stats,
+            "enable_gallery_matching": self.enable_gallery_matching,
+            "enable_database_matching": self.enable_database_matching,
+            "recognition_image_format": self.recognition_image_format,
         }
 
 
-# Define the missing FaceAnalysisJSONRequest model
+# Define the FaceAnalysisJSONRequest model
 class FaceAnalysisJSONRequest(BaseModel):
     image_base64: str
     mode: Optional[AnalysisMode] = AnalysisMode.FULL_ANALYSIS
@@ -166,7 +197,7 @@ class FaceResult:
     """ผลลัพธ์การวิเคราะห์ใบหน้า 1 ใบ (Detection + Recognition) - Enhanced"""
 
     # Detection results (required)
-    bbox: Any  # BoundingBox from face_detection.models
+    bbox: BoundingBox
     confidence: float
     quality_score: float
 
@@ -174,6 +205,7 @@ class FaceResult:
     embedding: Optional[Any] = None  # FaceEmbedding from face_recognition.models
     matches: Optional[List[Any]] = None  # List[FaceMatch] from face_recognition.models
     best_match: Optional[Any] = None  # FaceMatch from face_recognition.models
+    query_embedding: Optional[Any] = None  # Query embedding
 
     # Additional data
     face_crop: Optional[np.ndarray] = None
@@ -185,6 +217,12 @@ class FaceResult:
     model_used: str = ""
     quality_assessment: Optional[Dict[str, Any]] = None
     analysis_metadata: Optional[Dict[str, Any]] = None
+    
+    # Recognition specific fields
+    recognition_time: float = 0.0
+    embedding_time: float = 0.0
+    search_time: float = 0.0
+    recognition_model: Optional[str] = None
 
     @property
     def has_identity(self) -> bool:
@@ -218,6 +256,34 @@ class FaceResult:
             return getattr(self.best_match, "confidence", 0.0)
         return 0.0
 
+    def get_face_crop_bytes(self, source_image: Optional[np.ndarray] = None, 
+                           image_format: str = "jpg") -> Optional[bytes]:
+        """Get face crop as bytes for recognition processing"""
+        try:
+            face_crop_to_encode = None
+            
+            if self.face_crop is not None:
+                face_crop_to_encode = self.face_crop
+            elif source_image is not None:
+                # Extract face crop from source image using bbox
+                h, w = source_image.shape[:2]
+                x1 = max(0, int(self.bbox.x1))
+                y1 = max(0, int(self.bbox.y1))
+                x2 = min(w, int(self.bbox.x2))
+                y2 = min(h, int(self.bbox.y2))
+                
+                if x1 < x2 and y1 < y2:
+                    face_crop_to_encode = source_image[y1:y2, x1:x2]
+            
+            if face_crop_to_encode is not None:
+                success, buffer = cv2.imencode(f".{image_format}", face_crop_to_encode)
+                if success:
+                    return buffer.tobytes()
+            
+            return None
+        except Exception:
+            return None
+
     def to_dict(self) -> Dict[str, Any]:
         """แปลงเป็น dictionary สำหรับ JSON serialization"""
         result = {
@@ -239,6 +305,10 @@ class FaceResult:
             "face_id": self.face_id,
             "processing_time": float(self.processing_time),
             "model_used": self.model_used,
+            "recognition_time": float(self.recognition_time),
+            "embedding_time": float(self.embedding_time),
+            "search_time": float(self.search_time),
+            "recognition_model": self.recognition_model,
         }
 
         if self.embedding and hasattr(self.embedding, "to_dict"):
@@ -300,7 +370,7 @@ class FaceAnalysisResult:
     error: Optional[str] = None
     success: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """คำนวณ statistics หลังจากสร้าง object"""
         self.total_faces = len(self.faces)
         self.usable_faces = len([f for f in self.faces if f.quality_score >= 60])
@@ -443,7 +513,7 @@ class BatchAnalysisResult:
     failed_analyses: int = 0
     batch_metadata: Optional[Dict[str, Any]] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Calculate additional statistics"""
         self.successful_analyses = len([r for r in self.results if r.success])
         self.failed_analyses = len([r for r in self.results if not r.success])
