@@ -8,16 +8,80 @@ version = "2.0.0"
 description = "Professional Face Detection, Recognition & Analysis System"
 readme = "README.md"
 requires-python = ">=3.8"
-dependencies = [
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    # Add your other dependencies here
+authors = [
+    {name = "Face Recognition System Team", email = "support@face-recognition-system.com"}
 ]
+license = {text = "MIT"}
+keywords = ["face-recognition", "computer-vision", "ai", "machine-learning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn[standard]>=0.34.3",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.11.5",
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "opencv-python>=4.11.0.86",
+    "pillow>=11.1.0",
+    "numpy>=1.26.4",
+    "scikit-learn>=1.7.0",
+    "onnxruntime-gpu>=1.22.0",
+    "ultralytics>=8.3.152",
+    "imageio>=2.37.0",
+    "aiofiles>=0.8.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.3",
+    "coloredlogs>=15.0.1",
+    "tqdm>=4.67.1",
+    "pandas>=2.3.0",
+    "scipy>=1.15.3",
+    "httpx>=0.24.1",
+    "starlette>=0.41.3",
+    "anyio>=4.4.0",
+    "matplotlib>=3.10.3",
+    "seaborn>=0.13.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "black>=25.1.0",
+    "isort>=5.13.0",
+    "mypy>=1.8.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/face-recognition-system"
+Documentation = "https://face-recognition-system.readthedocs.io"
+Repository = "https://github.com/your-org/face-recognition-system.git"
+"Bug Tracker" = "https://github.com/your-org/face-recognition-system/issues"
+
+[project.scripts]
+face-recognition = "src.main:main"
+
+[tool.setuptools]
+packages = ["src"]
+package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.setuptools.package-data]
+"src" = ["py.typed"]
 
 [tool.mypy]
 python_version = "3.8"
@@ -27,24 +91,138 @@ disallow_untyped_defs = true
 namespace_packages = true
 explicit_package_bases = true
 mypy_path = "."
+show_error_codes = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = [
-    "src.*",
+    "onnxruntime.*",
+    "cv2.*",
+    "torch.*",
+    "torchvision.*",
+    "numpy.*",
+    "uvicorn.*",
+    "fastapi.*",
+    "ultralytics.*",
+    "coloredlogs.*",
+    "tqdm.*",
+    "pandas.*",
+    "scipy.*",
+    "matplotlib.*",
+    "seaborn.*",
+    "imageio.*",
 ]
 ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+extend-exclude = [
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "*.egg-info",
+    "venv",
+    "env",
+    "logs",
+    "output",
+    "temp",
+    "model",
+]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C", "N"]
-ignore = ["E402"]  # Allow imports after code (for sys.path modification)
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E402",  # Module level import not at top of file
+    "E501",  # Line too long
+    "B008",  # Do not perform function calls in argument defaults
+    "B904",  # Use `raise ... from err`
+    "UP007", # Use `X | Y` for type annotations
+]
 
 [tool.ruff.lint.per-file-ignores]
 "src/main.py" = ["E402"]
+"start.py" = ["E402"]
+"setup.py" = ["E402"]
+"bulk_face_test.py" = ["E402"]
 
-[tool.pylance]
-include = ["src"]
-extraPaths = ["."]
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+force-single-line = true
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | logs
+  | output
+  | temp
+  | model
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["src"]
+skip_glob = ["venv/*", "env/*", "logs/*", "output/*", "temp/*", "model/*"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/.*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
