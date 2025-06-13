@@ -214,9 +214,7 @@ class FaceMatch:
     distance: float = 0.0
     rank: int = 0
     match_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
-    comparison_method: str = "cosine_similarity"
-
-    # Legacy fields for backward compatibility
+    comparison_method: str = "cosine_similarity"    # Legacy fields for backward compatibility
     identity_id: str = field(init=False)
     similarity: float = field(init=False)
     is_match: bool = field(init=False)
@@ -227,16 +225,16 @@ class FaceMatch:
         # Set legacy fields for backward compatibility
         self.identity_id = self.person_id
         self.similarity = self.confidence
-        self.is_match = self.confidence > 0.6  # Default threshold
+        self.is_match = self.confidence > 0.5  # Lowered from 0.6 to 0.5
 
         # Set similarity_score if not provided
         if self.similarity_score == 0.0:
             self.similarity_score = self.confidence
 
-        # Set match quality based on confidence
-        if self.confidence >= 0.8:
+        # Set match quality based on confidence (adjusted thresholds)
+        if self.confidence >= 0.75:  # Lowered from 0.8 to 0.75
             self.match_quality = RecognitionQuality.HIGH
-        elif self.confidence >= 0.6:
+        elif self.confidence >= 0.5:  # Lowered from 0.6 to 0.5
             self.match_quality = RecognitionQuality.MEDIUM
         elif self.confidence > 0.0:
             self.match_quality = RecognitionQuality.LOW

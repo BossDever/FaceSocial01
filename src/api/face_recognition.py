@@ -31,7 +31,7 @@ class RecognitionRequest(BaseModel):
     gallery: Optional[Dict[str, Any]] = None
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
-    similarity_threshold: Optional[float] = 0.6
+    similarity_threshold: Optional[float] = 0.5  # Lowered from 0.6 to 0.5
 
 class EmbeddingRequest(BaseModel):
     face_image_base64: str
@@ -514,9 +514,8 @@ async def compare_faces_endpoint(
         
         # Calculate cosine similarity
         similarity = float(np.dot(emb1_norm, emb2_norm))
-        
-        # Determine if faces match (using default threshold)
-        threshold = 0.6
+          # Determine if faces match (using optimized threshold)
+        threshold = 0.5  # Lowered from 0.6 to 0.5
         is_match = similarity >= threshold
 
         return JSONResponse(content={

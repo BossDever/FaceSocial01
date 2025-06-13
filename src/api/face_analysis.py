@@ -29,6 +29,7 @@ class RecognitionRequest(BaseModel):
     gallery: Dict[str, Any]
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
+    similarity_threshold: Optional[float] = 0.5  # Lowered from 0.6 to 0.5
 
 class AddFaceRequest(BaseModel):
     person_id: str

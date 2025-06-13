@@ -49,22 +49,22 @@ SUPPORTED_MODELS = {
     }
 }
 
-# Default similarity thresholds for each model
+# Default similarity thresholds for each model (Optimized for real-world performance)
 DEFAULT_THRESHOLDS = {
     "facenet": {
-        "similarity_threshold": 0.60,
-        "unknown_threshold": 0.55,
-        "high_confidence": 0.80
+        "similarity_threshold": 0.50,  # Lowered from 0.60 to 0.50
+        "unknown_threshold": 0.45,     # Lowered from 0.55 to 0.45
+        "high_confidence": 0.75        # Lowered from 0.80 to 0.75
     },
     "adaface": {
-        "similarity_threshold": 0.65,
-        "unknown_threshold": 0.60,
-        "high_confidence": 0.85
+        "similarity_threshold": 0.55,  # Lowered from 0.65 to 0.55
+        "unknown_threshold": 0.50,     # Lowered from 0.60 to 0.50
+        "high_confidence": 0.80        # Lowered from 0.85 to 0.80
     },
     "arcface": {
-        "similarity_threshold": 0.65,
-        "unknown_threshold": 0.60, 
-        "high_confidence": 0.85
+        "similarity_threshold": 0.55,  # Lowered from 0.65 to 0.55
+        "unknown_threshold": 0.50,     # Lowered from 0.60 to 0.50
+        "high_confidence": 0.80        # Lowered from 0.85 to 0.80
     }
 }
 
