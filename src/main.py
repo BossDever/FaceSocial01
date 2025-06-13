@@ -217,8 +217,7 @@ async def initialize_services(app: FastAPI, settings: Any) -> bool:
         init_tasks = []
         for service_name, (service_class, service_config) in services_to_init.items():
             init_tasks.append(
-                _initialize_single_service(
-                    app, service_name, service_class, vram_manager, service_config
+                _initialize_single_service(                app, service_name, service_class, vram_manager, service_config
                 )
             )
         
@@ -226,6 +225,19 @@ async def initialize_services(app: FastAPI, settings: Any) -> bool:
         if not all(results):
             logger.error("❌ One or more services failed to initialize.")
             return False
+
+        # ✅ เพิ่ม: inject shared services ให้ Face Analysis Service
+        face_analysis_service = getattr(app.state, FACE_ANALYSIS_SERVICE, None)
+        face_detection_service = getattr(app.state, FACE_DETECTION_SERVICE, None) 
+        face_recognition_service = getattr(app.state, FACE_RECOGNITION_SERVICE, None)
+        
+        if face_analysis_service and face_detection_service and face_recognition_service:
+            logger.info("🔧 Setting shared services for Face Analysis Service...")
+            face_analysis_service.set_shared_services(
+                face_detection_service=face_detection_service,
+                face_recognition_service=face_recognition_service
+            )
+            logger.info("✅ Shared services set for Face Analysis Service")
 
         logger.info("✅ All services initialized successfully.")
         return True
@@ -316,7 +328,12 @@ async def health_check(request: Request) -> Dict[str, Any]:
         service_instance = getattr(request.app.state, service_key, None)
         if service_instance and hasattr(service_instance, 'get_service_info'):
             try:
-                info = await service_instance.get_service_info()
+                # Check if get_service_info is async or sync
+                import inspect
+                if inspect.iscoroutinefunction(service_instance.get_service_info):
+                    info = await service_instance.get_service_info()
+                else:
+                    info = service_instance.get_service_info()
                 service_statuses[service_key] = {
                     "status": "healthy",
                     "details": info

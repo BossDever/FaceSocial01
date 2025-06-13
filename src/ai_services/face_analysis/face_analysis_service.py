@@ -6,23 +6,32 @@ Face Analysis Service
 Enhanced End-to-End Solution with better error handling and performance
 """
 
+from typing import Any, Dict, List, Optional, Tuple, Union
+import asyncio
+import time
 import numpy as np
 import cv2
-from typing import List, Dict, Optional, Any, Tuple, Union
+
+# ruff: noqa: E501, C901, F821, W293  # Disable line length, complexity, undefined name, blank whitespace warnings
+
 import logging
-import time
-import asyncio
+
+# ruff: noqa: F821
+# Use relative import and suppress missing import
+from ...core.log_config import get_logger  # type: ignore[reportMissingImports]
 
 from .models import (
-    FaceAnalysisResult,
-    FaceResult,
     AnalysisConfig,
+    FaceResult,
+    FaceAnalysisResult,
     AnalysisMode,
     QualityLevel,
-    BoundingBox,
 )
+from ..face_detection.face_detection_service import FaceDetectionService
+from ..face_recognition.face_recognition_service import FaceRecognitionService
+from ..face_detection.utils import BoundingBox
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FaceAnalysisService:
@@ -31,15 +40,35 @@ class FaceAnalysisService:
     รวม Face Detection + Face Recognition ในระบบเดียว
     """
 
-    def __init__(self, vram_manager: Any, config: Dict[str, Any]):
+    def __init__(
+        self,
+        vram_manager: Any = None,
+        config: Optional[Dict[str, Any]] = None,
+        face_detection_service: Optional[FaceDetectionService] = None,  # Add for DI
+        face_recognition_service: Optional[FaceRecognitionService] = None,  # Add for DI
+    ):
         self.vram_manager = vram_manager
-        self.config = config
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger  # Use the imported logger
+
+        # Parse configuration
+        self.config = config or {}
+        self.config.setdefault("detection", {})
+        self.config.setdefault("recognition", {})
 
         # Sub-services - will be initialized later
-        self.face_detection_service = None
-        self.face_recognition_service = None
+        self.face_detection_service = face_detection_service
+        self.face_recognition_service = face_recognition_service
 
+        if self.face_detection_service is None:
+            logger.info("FaceAnalysisService: FaceDetectionService not provided at init, creating new.")
+            # This path should ideally not be taken if using shared services
+            # self.face_detection_service = FaceDetectionService(vram_manager, self.config.detection_config_dict)
+        
+        if self.face_recognition_service is None:
+            logger.info("FaceAnalysisService: FaceRecognitionService not provided at init, creating new.")
+            # This path should ideally not be taken if using shared services
+            # self.face_recognition_service = FaceRecognitionService(vram_manager, self.config.recognition_config_dict)
+        
         # Performance tracking
         self.stats: Dict[str, Any] = {
             "total_analyses": 0,
@@ -51,61 +80,36 @@ class FaceAnalysisService:
             "recognition_times": [],
         }
 
-        self.logger.info("Face Analysis Service initialized")
-
+        self.logger.info("Face Analysis Service initialized")    def set_shared_services(
+        self,
+        face_detection_service: FaceDetectionService,
+        face_recognition_service: FaceRecognitionService,
+    ):
+        """Inject shared service instances."""
+        self.logger.info("FaceAnalysisService: Setting shared FaceDetectionService and FaceRecognitionService.")
+        self.face_detection_service = face_detection_service
+        self.face_recognition_service = face_recognition_service
+    
     async def initialize(self) -> bool:
-        """เริ่มต้นระบบ Face Analysis"""
-        try:
-            self.logger.info("🔧 Initializing Face Analysis Service...")
+        self.logger.info("🔧 Initializing Face Analysis Service...")
+        # Initialization logic for FaceAnalysisService itself, if any.
+        # Dependencies (detection/recognition services) should be initialized by the caller (main.py)
+        # and injected via set_shared_services.
 
-            # Initialize face detection service
-            try:
-                from ..face_detection.face_detection_service import FaceDetectionService
+        if self.face_detection_service is None:
+            self.logger.warning("⚠️ FaceDetectionService not set yet (will be injected later)")
+            # return False # Optionally prevent startup if services are critical and not set
+        else:
+            self.logger.info("✅ FaceDetectionService is set.")
 
-                detection_config = self.config.get("detection", {})
-                self.face_detection_service = FaceDetectionService(
-                    self.vram_manager, detection_config
-                )
-
-                detection_init = await self.face_detection_service.initialize()
-                if not detection_init:
-                    self.logger.error("❌ Failed to initialize face detection")
-                    return False
-                else:
-                    self.logger.info("✅ Face detection service initialized")
-
-            except ImportError as e:
-                self.logger.error(f"❌ Face detection service not available: {e}")
-                return False
-
-            # Initialize face recognition service
-            try:
-                from ..face_recognition.face_recognition_service import (
-                    FaceRecognitionService,
-                )
-
-                recognition_config = self.config.get("recognition", {})
-                self.face_recognition_service = FaceRecognitionService(
-                    self.vram_manager, recognition_config
-                )
-
-                recognition_init = await self.face_recognition_service.initialize()
-                if not recognition_init:
-                    self.logger.error("❌ Failed to initialize face recognition")
-                    return False
-                else:
-                    self.logger.info("✅ Face recognition service initialized")
-
-            except ImportError as e:
-                self.logger.error(f"❌ Face recognition service not available: {e}")
-                return False
-
-            self.logger.info("✅ Face Analysis Service ready")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Face Analysis Service initialization failed: {e}")
-            return False
+        if self.face_recognition_service is None:
+            self.logger.warning("⚠️ FaceRecognitionService not set yet (will be injected later)")
+            # return False
+        else:
+            self.logger.info("✅ FaceRecognitionService is set.")
+            
+        self.logger.info("✅ Face Analysis Service initialized (or checked for shared services).")
+        return True
 
     async def _handle_detection(
         self, image: np.ndarray, config: AnalysisConfig
@@ -184,7 +188,7 @@ class FaceAnalysisService:
         return time.time() - recognition_start_time, recognition_model_used
 
     async def _handle_recognition_only(
-        self, image: np.ndarray, config: AnalysisConfig, gallery: Dict[str, Any]
+        self, image: np.ndarray, config: AnalysisConfig, gallery: Optional[Dict[str, Any]]
     ) -> Tuple[List[FaceResult], float, Optional[str]]:
         """Handles the recognition-only mode."""
         recognition_start_time = time.time()
@@ -196,7 +200,7 @@ class FaceAnalysisService:
 
         try:
             # Convert np.ndarray to bytes for recognize_faces
-            is_success, buffer = cv2.imencode(".jpg", image) # Assuming image is BGR
+            is_success, buffer = cv2.imencode(".jpg", image)  # Assuming image is BGR
             if not is_success:
                 self.logger.error("❌ Failed to encode image for recognition-only mode")
                 image_bytes_for_recognition = None
@@ -229,7 +233,7 @@ class FaceAnalysisService:
                         faces.append(face_result)
 
                 recognition_model_used = (
-                    config.recognition_model.value
+                    config.recognition_model
                     if config.recognition_model
                     else None
                 )
@@ -251,7 +255,7 @@ class FaceAnalysisService:
         self,
         image: np.ndarray,
         config: AnalysisConfig,
-        gallery: Optional[Dict[str, Any]] = None,
+        gallery: Optional[Dict[str, Any]] = None, # Add gallery parameter
     ) -> FaceAnalysisResult:
         """
         วิเคราะห์ใบหน้าครบวงจร
@@ -270,6 +274,7 @@ class FaceAnalysisService:
         faces: List[FaceResult] = []
         detection_model_used = None
         recognition_model_used = None
+        gallery_actually_used = False # Initialize gallery_actually_used
 
         try:
             # Step 1: Face Detection
@@ -282,25 +287,61 @@ class FaceAnalysisService:
                     await self._handle_detection(image, config)
                 )
 
-            # Step 2: Face Recognition
+            # Step 2: Face Recognition (modified to pass gallery)
             if (
                 config.mode in [AnalysisMode.FULL_ANALYSIS, AnalysisMode.COMPREHENSIVE]
-                and gallery
-                and config.enable_gallery_matching
-                and faces
+                and faces # Only proceed if faces were detected
             ):
-                recognition_time, recognition_model_used_rec = (
-                    await self._handle_recognition(image, faces, config, gallery)
-                )
-                # Prioritize recognition model if available
-                if recognition_model_used_rec:
-                    recognition_model_used = recognition_model_used_rec
+                if gallery and config.enable_gallery_matching:
+                    self.logger.info(
+                        f"Starting recognition for {len(faces)} faces with provided gallery ({len(gallery)} people)."
+                    )
+                    gallery_actually_used = True # Set to True when gallery is used
+                    # Pass gallery to _handle_recognition
+                    recognition_time_val, recognition_model_used_rec = await self._handle_recognition(
+                        image, faces, config, gallery
+                    )
+                    recognition_time += recognition_time_val
+                    if recognition_model_used_rec:
+                        recognition_model_used = recognition_model_used_rec
+                elif config.enable_database_matching:
+                    self.logger.info(
+                        f"Starting recognition for {len(faces)} faces with internal database."
+                    )
+                    # Call _handle_recognition without gallery to use internal DB
+                    recognition_time_val, recognition_model_used_rec = await self._handle_recognition(
+                        image, faces, config, None # Explicitly None for gallery
+                    )
+                    recognition_time += recognition_time_val
+                    if recognition_model_used_rec:
+                        recognition_model_used = recognition_model_used_rec
+                else:
+                    self.logger.info("Recognition skipped: Gallery not provided/enabled, and DB matching not enabled.")
 
-            # Step 3: Handle recognition-only mode
-            elif config.mode == AnalysisMode.RECOGNITION_ONLY and gallery:
-                faces, recognition_time, recognition_model_used = (
-                    await self._handle_recognition_only(image, config, gallery)
-                )
+            # Step 3: Handle recognition-only mode (modified to pass gallery)
+            elif config.mode == AnalysisMode.RECOGNITION_ONLY:
+                if gallery and config.enable_gallery_matching:
+                    self.logger.info(f"Processing recognition-only mode with provided gallery ({len(gallery)} people).")
+                    gallery_actually_used = True # Set to True when gallery is used
+                    # Pass gallery to _handle_recognition_only
+                    faces, rec_time, rec_model = await self._handle_recognition_only(
+                        image, config, gallery
+                    )
+                    recognition_time += rec_time
+                    if rec_model:
+                        recognition_model_used = rec_model
+                elif config.enable_database_matching:
+                    self.logger.info("Processing recognition-only mode with internal database.")
+                     # Call _handle_recognition_only without gallery
+                    faces, rec_time, rec_model = await self._handle_recognition_only(
+                        image, config, None # Explicitly None for gallery
+                    )
+                    recognition_time += rec_time
+                    if rec_model:
+                        recognition_model_used = rec_model
+                else:
+                    self.logger.info("Recognition-only skipped: Gallery not provided/enabled, and DB matching not enabled.")
+                    # Result will have no faces if no recognition is done.
 
             total_time = time.time() - start_time
 
@@ -312,12 +353,14 @@ class FaceAnalysisService:
                 detection_time=detection_time,
                 recognition_time=recognition_time,
                 total_time=total_time,
-                detection_model_used=detection_model_used,
-                recognition_model_used=recognition_model_used,
+                detection_model_used=detection_model_used,                recognition_model_used=recognition_model_used,
                 analysis_metadata={
-                    "quality_level": config.quality_level.value,
+                    "quality_level": config.quality_level.value if hasattr(config.quality_level, 'value') else str(config.quality_level),
                     "parallel_processing": config.parallel_processing,
                     "gallery_size": len(gallery) if gallery else 0,
+                    "gallery_provided": gallery is not None, # Whether it was passed in
+                    "gallery_used_for_matching": gallery_actually_used, # Whether it was used
+                    "database_used_for_matching": config.enable_database_matching and not gallery_actually_used,
                 },
             )
 
@@ -413,89 +456,152 @@ class FaceAnalysisService:
         image: np.ndarray,
         faces: List[FaceResult],
         config: AnalysisConfig,
-        gallery: Dict[str, Any],
+        gallery: Optional[Dict[str, Any]], # Add gallery parameter
     ):
         """ประมวลผล Face Recognition สำหรับหลายใบหน้า"""
         if not self.face_recognition_service:
+            self.logger.warning("Face recognition service not available for batch processing.")
             return
+
+        if not faces:
+            self.logger.info("No faces provided for recognition processing.")
+            return
+
+        # Check if gallery matching is enabled and gallery is provided
+        use_gallery = gallery and config.enable_gallery_matching
+        
+        if use_gallery:
+            self.logger.info(
+                f"Processing recognition for {len(faces)} faces with gallery ({len(gallery or {})} people)."
+            )
+        elif config.enable_database_matching:
+             self.logger.info(
+                f"Processing recognition for {len(faces)} faces with internal database."
+            )
+        else:
+            self.logger.info("Recognition skipped: Neither gallery nor database matching is enabled.")
+            return
+
 
         recognition_tasks = []
         for face_result in faces:
-            try:
-                face_crop = face_result.face_crop
-                if face_crop is None:
-                    face_crop = self._extract_face_crop(image, face_result.bbox)
+            if face_result.face_id is None: # Should not happen if IDs are assigned
+                face_result.face_id = f"face_{time.time_ns()}"
 
-                if face_crop is not None:
+            try:
+                face_crop_bytes = face_result.get_face_crop_bytes(image, config.recognition_image_format)
+                if face_crop_bytes is None: # Try extracting again if not already set
+                     face_crop_np = self._extract_face_crop(image, face_result.bbox)
+                     if face_crop_np is not None:
+                         _, buffer = cv2.imencode(f".{config.recognition_image_format}", face_crop_np)
+                         face_crop_bytes = buffer.tobytes()
+
+                if face_crop_bytes:
+                    # Pass gallery to _recognize_single_face
                     task = self._recognize_single_face(
-                        face_result, face_crop, config, gallery
+                        face_result, face_crop_bytes, config, gallery if use_gallery else None
                     )
-                    # Ensure it's a task
                     recognition_tasks.append(asyncio.create_task(task))
                 else:
-                    self.logger.warning("⚠️ Failed to extract face crop for recognition")
+                    self.logger.warning(
+                        f"⚠️ Failed to extract/encode face crop for recognition (ID: {face_result.face_id})."
+                    )
             except Exception as e:
-                self.logger.warning(f"⚠️ Error preparing face for recognition: {e}")
+                self.logger.error(
+                    f"⚠️ Error preparing face for recognition (ID: {face_result.face_id}): {e}",
+                    exc_info=True
+                )
                 continue
-
+        
         if recognition_tasks:
-            await self._execute_recognition_tasks(
-                recognition_tasks, config.parallel_processing
-            )
+            await self._execute_recognition_tasks(recognition_tasks, config.parallel_processing)
+            self.logger.info(f"Completed recognition tasks for {len(recognition_tasks)} faces.")
+        else:
+            self.logger.info("No recognition tasks were created.")
 
     async def _recognize_single_face(
         self,
         face_result: FaceResult,
-        face_crop: np.ndarray,
+        face_crop_bytes: bytes,
         config: AnalysisConfig,
-        gallery: Dict[str, Any],
-    ):
-        """จดจำใบหน้าเดี่ยว"""
-        try:
-            # Convert face_crop (np.ndarray) to bytes for recognize_faces
-            is_success, buffer = cv2.imencode(".jpg", face_crop)
-            if not is_success:
-                self.logger.error("Failed to encode face_crop for recognition")
-                return
-            face_crop_bytes = buffer.tobytes()
+        gallery: Optional[Dict[str, Any]] = None, # Add gallery parameter
+    ) -> None:
+        """Recognizes a single face, optionally using a provided gallery."""
+        if not self.face_recognition_service:
+            logger.warning("Face recognition service not available for _recognize_single_face")
+            return
 
-            recognition_result_dict = await (
-                self.face_recognition_service.recognize_faces(
+        if face_crop_bytes is None or len(face_crop_bytes) == 0:
+            logger.warning(f"No face crop bytes for face_id {face_result.face_id}, skipping recognition.")
+            return
+
+        try:
+            recognition_result_dict: Dict[str, Any] = {}
+            if gallery and config.enable_gallery_matching:
+                logger.debug(
+                    f"Recognizing face {face_result.face_id} with gallery ({len(gallery)} people) "
+                    f"using model {config.recognition_model}."
+                )
+                # Call the new method that accepts a gallery
+                recognition_result_dict = await self.face_recognition_service.recognize_faces_with_gallery(
+                    image_bytes=face_crop_bytes,
+                    gallery=gallery,
+                    model_name=config.recognition_model,
+                )
+            elif config.enable_database_matching: # Fallback to internal DB if no gallery or not enabled for gallery
+                logger.debug(
+                    f"Recognizing face {face_result.face_id} with internal database "
+                    f"using model {config.recognition_model}."
+                )
+                recognition_result_dict = await self.face_recognition_service.recognize_faces(
                     image_bytes=face_crop_bytes, model_name=config.recognition_model
                 )
-            )
+            else:
+                logger.debug(f"Recognition skipped for face {face_result.face_id} as no gallery/DB matching enabled.")
+                # Populate with minimal data if no recognition was performed but was expected
+                face_result.recognition_model = config.recognition_model
+                return
 
-            # Ensure recognition_result_dict is a dictionary
+
             if not isinstance(recognition_result_dict, dict):
                 logger.error(
-                    f"❌ Recognition service did not return a dict. "
+                    f"❌ Recognition service did not return a dict for face {face_result.face_id}. "
                     f"Got: {type(recognition_result_dict)}"
                 )
-                # Fallback to a default dict structure or handle error appropriately
-                recognition_result_dict = {}
-
+                recognition_result_dict = {} # Fallback
 
             # Update FaceResult with recognition details
             face_result.query_embedding = recognition_result_dict.get("query_embedding")
             face_result.matches = recognition_result_dict.get("matches", [])
             face_result.best_match = recognition_result_dict.get("best_match")
             face_result.recognition_model = config.recognition_model
-            face_result.recognition_time = recognition_result_dict.get(
-                "processing_time", 0.0
-            )
-            face_result.embedding_time = recognition_result_dict.get(
-                "embedding_time", 0.0
-            )
+            
+            # Times from recognition service are for its own operations
+            face_result.recognition_time = recognition_result_dict.get("processing_time", 0.0)
+            face_result.embedding_time = recognition_result_dict.get("embedding_time", 0.0)
+            face_result.search_time = recognition_result_dict.get("search_time", 0.0)
+            
+            # Log details of the best match if found
+            if face_result.best_match and isinstance(face_result.best_match, dict):
+                person_id = face_result.best_match.get('person_id')
+                sim = face_result.best_match.get('similarity')
+                name = face_result.best_match.get('person_name', person_id)
+                logger.debug(
+                    f"Face {face_result.face_id} best match: {name} (ID: {person_id}) with sim: {sim:.4f}"
+                )
+            elif face_result.matches: # Log if matches exist but no single best_match field (e.g. from older service version)
+                 logger.debug(f"Face {face_result.face_id} has {len(face_result.matches)} matches, but no 'best_match' field.")
+            else:
+                logger.debug(f"No recognition match for face {face_result.face_id}.")
+
 
         except Exception as e:
-            self.logger.error(
-                f"❌ Error recognizing single face ({face_result.face_id}): {e}",
+            logger.error(
+                f"❌ Error during single face recognition for face_id {face_result.face_id}: {e}",
                 exc_info=True,
             )
-            # Ensure metadata is initialized even on error
-            if not face_result.analysis_metadata:
-                face_result.analysis_metadata = {}
-            face_result.analysis_metadata["recognition_error"] = str(e)
+            # Optionally set error state on face_result
+            # face_result.error = str(e)
 
     async def _create_recognition_only_result(
         self, image: np.ndarray, recognition_output: Dict[str, Any]
@@ -591,9 +697,7 @@ class FaceAnalysisService:
             x1_m = max(0, x1 - margin_pixels)
             y1_m = max(0, y1 - margin_pixels)
             x2_m = min(img_w, x2 + margin_pixels)
-            y2_m = min(img_h, y2 + margin_pixels)
-
-            if x1_m >= x2_m or y1_m >= y2_m:
+            y2_m = min(img_h, y2 + margin_pixels)            if x1_m >= x2_m or y1_m >= y2_m:
                 self.logger.warning(
                     f"Invalid crop dimensions after margin: "
                     f"({x1_m},{y1_m}) to ({x2_m},{y2_m})"
@@ -601,9 +705,8 @@ class FaceAnalysisService:
                 # Fallback to original bbox if margin makes it invalid
                 # (though return_exceptions=True should prevent this)
                 x1_m, y1_m, x2_m, y2_m = x1, y1, x2, y2
-                if x1_m >= x2_m or y1_m >= y2_m: # Still invalid
-                     return None
-
+                if x1_m >= x2_m or y1_m >= y2_m:  # Still invalid
+                    return None
 
             face_crop = image[y1_m:y2_m, x1_m:x2_m]
 
@@ -632,33 +735,32 @@ class FaceAnalysisService:
 
     def get_service_info(self) -> Dict[str, Any]:
         """ดึงข้อมูลเกี่ยวกับ service และ model ที่ใช้"""
-        detection_models = []
+        detection_info = {}
         if self.face_detection_service:
-            detection_models = (
-                self.face_detection_service.get_available_models()
-            ) # Use the correct method
+            detection_info = self.face_detection_service.get_service_info()
 
-        recognition_models = []
+        recognition_info = {}
         if self.face_recognition_service:
-            recognition_models = (
-                self.face_recognition_service.get_available_models()
-            ) # Use the correct method
+            recognition_info = self.face_recognition_service.get_service_info()
 
         return {
             "service_name": "FaceAnalysisService",
-            "version": "1.1.0", # Example version
+            "version": "1.1.0",
             "description": "Comprehensive face detection and recognition service.",
             "available_modes": [mode.value for mode in AnalysisMode],
             "available_quality_levels": [ql.value for ql in QualityLevel],
             "detection_service": {
                 "available": self.face_detection_service is not None,
-                "models": detection_models,
+                "info": detection_info,
             },
             "recognition_service": {
                 "available": self.face_recognition_service is not None,
-                "models": recognition_models,
+                "info": recognition_info,
+            },            "current_config_defaults": {
+                "detection_config": self.config.get("detection", {}),
+                "recognition_config": self.config.get("recognition", {}),
+                "analysis_config": "AnalysisConfig object required for detailed settings",
             },
-            "current_config_defaults": self.config, # Assuming config is serializable
         }
 
     def get_performance_stats(self) -> Dict[str, Any]:

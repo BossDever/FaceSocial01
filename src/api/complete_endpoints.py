@@ -570,6 +570,16 @@ def _parse_analysis_config(
                     status_code=400,
                     detail=f"Invalid analysis mode string: {request_mode}"
                 )
+
+    # Also handle quality_level conversion if it's a string
+    if 'quality_level' in analysis_config_dict and isinstance(analysis_config_dict['quality_level'], str):
+        try:
+            from ..ai_services.face_analysis.models import QualityLevel
+            analysis_config_dict['quality_level'] = QualityLevel(analysis_config_dict['quality_level'])
+        except ValueError:
+            # Keep as string if not valid enum
+            pass
+
     return AnalysisConfig(**analysis_config_dict)
 
 @face_analysis_router.post("/face-analysis/analyze-json")
@@ -664,7 +674,7 @@ async def face_analysis_health(
 ) -> Dict[str, Any]:
     """Health check for face analysis service"""
     try:
-        service_info = await service.get_available_models() # No trailing whitespace
+        service_info = service.get_service_info() # No await needed
         return {
             "status": "healthy",
             "service": "face_analysis",

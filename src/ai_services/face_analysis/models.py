@@ -14,9 +14,6 @@ import numpy as np
 from enum import Enum
 from pydantic import BaseModel  # Add pydantic BaseModel
 
-# Import BoundingBox from the correct location to re-export it
-from src.ai_services.face_detection.utils import BoundingBox
-
 # Import related models
 try:
     from src.ai_services.face_detection import models as face_detection_models
@@ -101,32 +98,12 @@ class AnalysisConfig:
 
     def __post_init__(self):
         """Post-initialization validation and defaults"""
-        # Convert string 'mode' to AnalysisMode enum if necessary
-        if isinstance(self.mode, str):
-            try:
-                self.mode = AnalysisMode(self.mode)
-            except ValueError:
-                # Default to FULL_ANALYSIS if conversion fails
-                self.mode = AnalysisMode.FULL_ANALYSIS
-                # Consider logging a warning here if a logger is available
-
-        # Convert string 'quality_level' to QualityLevel enum if necessary
-        if isinstance(self.quality_level, str):
-            try:
-                self.quality_level = QualityLevel(self.quality_level)
-            except ValueError:
-                # Default to BALANCED if conversion fails
-                self.quality_level = QualityLevel.BALANCED
-                # Consider logging a warning here if a logger is available
-        
         # Set default detection config if not provided
         if self.detection_config is None:
             self.detection_config = DetectionConfig(
                 engine=DetectionEngine.AUTO,
                 confidence_threshold=self.confidence_threshold,
-            )
-
-        # Set default recognition config if not provided
+            )        # Set default recognition config if not provided
         if self.recognition_config is None and self.mode in [
             AnalysisMode.FULL_ANALYSIS,
             AnalysisMode.COMPREHENSIVE,
@@ -137,10 +114,25 @@ class AnalysisConfig:
                 "return_embeddings": self.return_embeddings,
             }
 
+        # Convert string enums to proper Enum objects
+        if isinstance(self.mode, str):
+            try:
+                self.mode = AnalysisMode(self.mode)
+            except ValueError:
+                # Keep as string if not valid enum
+                pass
+
+        if isinstance(self.quality_level, str):
+            try:
+                self.quality_level = QualityLevel(self.quality_level)
+            except ValueError:
+                # Keep as string if not valid enum
+                pass
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
-            "mode": self.mode.value,
+            "mode": self.mode.value if hasattr(self.mode, 'value') else str(self.mode),
             "detection_model": self.detection_model,
             "recognition_model": self.recognition_model,
             "min_face_size": self.min_face_size,
@@ -150,7 +142,7 @@ class AnalysisConfig:
             "batch_size": self.batch_size,
             "use_quality_based_selection": self.use_quality_based_selection,
             "parallel_processing": self.parallel_processing,
-            "quality_level": self.quality_level.value,
+            "quality_level": self.quality_level.value if hasattr(self.quality_level, 'value') else str(self.quality_level),
             "return_face_crops": self.return_face_crops,
             "return_embeddings": self.return_embeddings,
             "return_detailed_stats": self.return_detailed_stats,
