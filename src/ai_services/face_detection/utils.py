@@ -1,4 +1,3 @@
-# cSpell:disable
 """
 ฟังก์ชันช่วยเหลือสำหรับระบบตรวจจับใบหน้า
 Enhanced version with better error handling and performance
@@ -334,7 +333,7 @@ def calculate_face_quality(
 
 def validate_bounding_box(
     bbox: BoundingBox, image_shape: Tuple[int, int], relaxed_validation: bool = True
-) -> Union[bool, Tuple[bool, str]]:  # Modified return type
+) -> bool:
     """
     ตรวจสอบความถูกต้องของ bounding box - Enhanced version
 
@@ -344,36 +343,36 @@ def validate_bounding_box(
         relaxed_validation: ใช้การตรวจสอบแบบหลวมหรือไม่
 
     Returns:
-        True if valid, or (False, reason_string) if invalid.
+        True if valid, False otherwise
     """
     try:
         if not _validate_bbox_input(bbox, image_shape):
-            return False, "Invalid bbox or image_shape input"
+            return False
 
         img_height, img_width = image_shape[:2]
 
         if not _validate_bbox_dimensions(bbox, relaxed_validation):
-            return False, "Invalid bounding box dimensions"
+            return False
 
         # Validate boundaries
         if not _validate_bbox_boundaries(
             bbox, img_width, img_height, relaxed_validation
         ):
-            return False, "Bounding box out of image boundaries"
+            return False
 
         # Validate area
         if not _validate_bbox_area(bbox, img_width, img_height, relaxed_validation):
-            return False, "Bounding box area is too large or too small"
+            return False
 
         # Validate aspect ratio
         if not _validate_bbox_aspect_ratio(bbox, relaxed_validation):
-            return False, "Bounding box aspect ratio is out of range"
+            return False
 
         return True
 
     except Exception as e:
         logger.error(f"Bounding box validation failed: {e}")
-        return False, f"Exception during validation: {e}"
+        return False
 
 
 def _validate_bbox_input(bbox: BoundingBox, image_shape: Tuple[int, int]) -> bool:

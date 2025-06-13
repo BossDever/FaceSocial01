@@ -10,15 +10,30 @@ import sys
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-# Consolidate typing imports here, removing unused ones
 from typing import Any, AsyncGenerator, Dict, List
-
 import asyncio
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# Setup logging first
+def setup_logging() -> None:
+    """Setup logging configuration"""
+    os.makedirs("logs", exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("logs/app.log")
+        ]
+    )
+
+# Initialize logging
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Third-party imports
 import uvicorn
@@ -52,21 +67,7 @@ except ImportError as e:
     print(f"Python path: {sys.path}")
     sys.exit(1)
 
-# Setup logging
-def setup_logging() -> None: # Added -> None
-    os.makedirs("logs", exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler("logs/app.log")
-        ]
-    ) # Closed parenthesis here
-
-setup_logging() # Moved call to after function definition
-logger = logging.getLogger(__name__)
-
+# Custom exception handlers
 async def validation_exception_handler_custom(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
@@ -86,10 +87,10 @@ async def validation_exception_handler_custom(
                         if isinstance(item, bytes):
                             safe_items.append(f"<bytes: {len(item)} bytes>")
                         else:
-                            safe_items.append(str(item)) # Ensure all items are strings
-                    safe_error[key] = ", ".join(safe_items) # Join list into a string
+                            safe_items.append(str(item))
+                    safe_error[key] = ", ".join(safe_items)
                 else:
-                    safe_error[key] = str(value) # Ensure value is a string
+                    safe_error[key] = str(value)
             safe_errors.append(safe_error)
         
         return JSONResponse(
@@ -105,24 +106,21 @@ async def validation_exception_handler_custom(
 
 # Helper function to sanitize data for jsonable_encoder
 def sanitize_for_jsonable_encoder(data: Any) -> Any:
+    """Sanitize data for JSON encoding"""
     if isinstance(data, bytes):
         return data.decode('utf-8', errors='replace')
     elif isinstance(data, str):
-        # Encode to bytes and then decode back to string with error replacement
-        # This helps clean up strings that might contain invalid byte sequences
-        # represented as characters (e.g., from incorrect prior decoding steps)
         return data.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
     elif isinstance(data, list):
         return [sanitize_for_jsonable_encoder(item) for item in data]
     elif isinstance(data, dict):
         return {
-            # Sanitize keys as well, in case they are problematic (though less common)
             sanitize_for_jsonable_encoder(k): sanitize_for_jsonable_encoder(v)
             for k, v in data.items()
         }
     return data
 
-async def _fastapi_native_validation_exception_handler(
+async def fastapi_native_validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     """Custom exception handler for request validation errors."""
@@ -138,19 +136,16 @@ async def _fastapi_native_validation_exception_handler(
         f"Sanitized errors: {sanitized_errors}. "
         f"Body type after sanitization: {type(sanitized_body)}"
     )
-    # Avoid logging full body if it could be large or sensitive.
-    # If further debugging of body content is needed,
-    # consider logging a snippet or specific parts.
 
     return JSONResponse(
-        status_code=422, # HTTP 422 Unprocessable Entity
+        status_code=422,
         content=jsonable_encoder({
             "detail": sanitized_errors,
-            "body": sanitized_body # Ensure this is serializable
+            "body": sanitized_body
         })
     )
 
-# Service names constant
+# Service names constants
 VRAM_MANAGER_SERVICE = "vram_manager"
 FACE_DETECTION_SERVICE = "face_detection_service"
 FACE_RECOGNITION_SERVICE = "face_recognition_service"
@@ -162,19 +157,21 @@ ALL_SERVICE_KEYS: List[str] = [
     FACE_RECOGNITION_SERVICE,
     FACE_ANALYSIS_SERVICE,
 ]
+
 USER_FACING_SERVICE_KEYS: List[str] = [
     FACE_DETECTION_SERVICE,
     FACE_RECOGNITION_SERVICE,
     FACE_ANALYSIS_SERVICE,
 ]
 
-async def _initialize_single_service(
+async def initialize_single_service(
     app: FastAPI,
     service_name: str,
     service_class: Any,
     vram_manager: VRAMManager,
     config: Any
 ) -> bool:
+    """Initialize a single service"""
     logger.info(f"🔧 Initializing {service_class.__name__}...")
     service_instance = service_class(vram_manager=vram_manager, config=config)
     if await service_instance.initialize():
@@ -187,37 +184,41 @@ async def _initialize_single_service(
 async def initialize_services(app: FastAPI, settings: Any) -> bool:
     """Initialize all services and attach to app.state"""
     try:
+        # Create required directories
         os.makedirs("logs", exist_ok=True)
         os.makedirs("output/detection", exist_ok=True)
         os.makedirs("output/recognition", exist_ok=True)
         os.makedirs("output/analysis", exist_ok=True)
         os.makedirs("temp", exist_ok=True)
 
+        # Initialize VRAM Manager
         logger.info("🔧 Initializing VRAM Manager...")
         vram_manager = VRAMManager(settings.vram_config)
         setattr(app.state, VRAM_MANAGER_SERVICE, vram_manager)
         logger.info("✅ VRAM Manager initialized")
 
-        # แก้ไขชื่อ config ให้ตรงกับที่กำหนดใน config.py
+        # Services configuration
         services_to_init = {
             FACE_DETECTION_SERVICE: (
                 FaceDetectionService,
-                settings.detection_config  # ✅ แก้ไขจาก face_detection_config
+                settings.detection_config
             ),
             FACE_RECOGNITION_SERVICE: (
                 FaceRecognitionService,
-                settings.recognition_config  # ✅ แก้ไขจาก face_recognition_config
+                settings.recognition_config
             ),
             FACE_ANALYSIS_SERVICE: (
                 FaceAnalysisService,
-                settings.analysis_config  # ✅ แก้ไขจาก face_analysis_config
+                settings.analysis_config
             ),
         }
 
+        # Initialize services
         init_tasks = []
         for service_name, (service_class, service_config) in services_to_init.items():
             init_tasks.append(
-                _initialize_single_service(                app, service_name, service_class, vram_manager, service_config
+                initialize_single_service(
+                    app, service_name, service_class, vram_manager, service_config
                 )
             )
         
@@ -226,7 +227,7 @@ async def initialize_services(app: FastAPI, settings: Any) -> bool:
             logger.error("❌ One or more services failed to initialize.")
             return False
 
-        # ✅ เพิ่ม: inject shared services ให้ Face Analysis Service
+        # Set shared services for Face Analysis Service
         face_analysis_service = getattr(app.state, FACE_ANALYSIS_SERVICE, None)
         face_detection_service = getattr(app.state, FACE_DETECTION_SERVICE, None) 
         face_recognition_service = getattr(app.state, FACE_RECOGNITION_SERVICE, None)
@@ -265,24 +266,20 @@ async def shutdown_services(app: FastAPI) -> None:
     else:
         logger.info("No services required explicit shutdown.")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifespan events (startup and shutdown)."""
     settings = get_settings()
-    app.state.settings = settings # Store settings in app.state
+    app.state.settings = settings
 
     if not await initialize_services(app, settings):
         logger.critical(
             "Service initialization failed. Application will not start properly."
         )
-        # Optionally, raise an exception here to prevent FastAPI from starting
-        # raise RuntimeError("Failed to initialize critical services.")
     
     yield  # Application is now running
 
     await shutdown_services(app)
-
 
 # Create FastAPI app instance with lifespan management
 app = FastAPI(
@@ -291,18 +288,17 @@ app = FastAPI(
     version="1.1.0",
     lifespan=lifespan,
     exception_handlers={
-        RequestValidationError: _fastapi_native_validation_exception_handler
+        RequestValidationError: fastapi_native_validation_exception_handler
     }
 )
-
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include API routers
@@ -310,9 +306,9 @@ app.include_router(face_detection_router, prefix="/api", tags=["Face Detection"]
 app.include_router(face_recognition_router, prefix="/api", tags=["Face Recognition"])
 app.include_router(face_analysis_router, prefix="/api", tags=["Face Analysis"])
 
-
 @app.get("/", include_in_schema=False)
 async def root_redirect() -> RedirectResponse:
+    """Redirect root to documentation"""
     return RedirectResponse(url="/docs")
 
 @app.get("/health", tags=["System"])
@@ -338,7 +334,7 @@ async def health_check(request: Request) -> Dict[str, Any]:
                     "status": "healthy",
                     "details": info
                 }
-                active_services +=1
+                active_services += 1
             except Exception as e:
                 logger.error(f"Error getting info for {service_key}: {e}")
                 service_statuses[service_key] = {
@@ -353,20 +349,26 @@ async def health_check(request: Request) -> Dict[str, Any]:
             }
             overall_healthy = False
             
-    # Check VRAM manager separately if it's critical but not user-facing for this check
+    # Check VRAM manager separately
     vram_manager = getattr(request.app.state, VRAM_MANAGER_SERVICE, None)
-    if vram_manager and hasattr(vram_manager, 'get_status_report'):
-        service_statuses[VRAM_MANAGER_SERVICE] = {
-            "status": "healthy", # Assuming healthy if get_status_report runs
-            "details": vram_manager.get_status_report()
-        }
+    if vram_manager and hasattr(vram_manager, 'get_vram_status'):
+        try:
+            vram_status = await vram_manager.get_vram_status()
+            service_statuses[VRAM_MANAGER_SERVICE] = {
+                "status": "healthy",
+                "details": vram_status
+            }
+        except Exception as e:
+            service_statuses[VRAM_MANAGER_SERVICE] = {
+                "status": "unhealthy",
+                "error": str(e)
+            }
     elif not vram_manager:
         service_statuses[VRAM_MANAGER_SERVICE] = {
             "status": "unavailable",
             "error": "VRAM Manager not found"
         }
         overall_healthy = False
-
 
     return {
         "status": "healthy" if overall_healthy else "degraded",
@@ -390,10 +392,9 @@ if __name__ == "__main__":
     log_dir.mkdir(parents=True, exist_ok=True)
 
     uvicorn.run(
-        "src.main:app",  # เปลี่ยนเป็น src.main:app
+        "src.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.reload,  # ใช้ settings.reload แทน settings.debug_mode
+        reload=settings.reload,
         log_level=settings.log_level.lower(),
-        # workers=1  # Comment out workers เมื่อใช้ reload
     )

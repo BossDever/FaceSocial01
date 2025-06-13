@@ -12,18 +12,16 @@ from typing import Dict, Any, Optional, List
 
 try:
     import torch
-
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    torch = None  # type: ignore
+    torch = None
 
 logger = logging.getLogger(__name__)
 
 
 class AllocationPriority(Enum):
     """Memory allocation priority levels"""
-
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
@@ -32,7 +30,6 @@ class AllocationPriority(Enum):
 
 class AllocationLocation(Enum):
     """Memory allocation location"""
-
     GPU = "gpu"
     CPU = "cpu"
 
@@ -40,7 +37,6 @@ class AllocationLocation(Enum):
 @dataclass
 class ModelAllocation:
     """Model memory allocation information"""
-
     model_id: str
     priority: AllocationPriority
     service_id: str
@@ -74,12 +70,14 @@ class VRAMManager:
         self.model_allocations: Dict[str, ModelAllocation] = {}
         self.total_vram = self._get_total_vram()
         self.allocated_vram = 0
-        self.lock = asyncio.Lock()  # Performance tracking
+        self.lock = asyncio.Lock()
+        
+        # Performance tracking
         self.allocation_history: List[Dict[str, Any]] = []
         self.max_history_size = config.get("max_history_size", 1000)
 
         logger.info(
-            "🔧 VRAM Manager initialized with "
+            f"🔧 VRAM Manager initialized with "
             f"{self.total_vram / 1024 / 1024:.1f}MB total VRAM"
         )
 
@@ -173,8 +171,7 @@ class VRAMManager:
                         )
                         if freed < vram_required - available_vram:
                             logger.error(
-                                "❌ Cannot free enough VRAM for critical model "
-                                f"{model_id}"
+                                f"❌ Cannot free enough VRAM for critical model {model_id}"
                             )
 
                     # Check VRAM again after freeing
@@ -190,12 +187,10 @@ class VRAMManager:
                             status="allocated_on_gpu",
                         )
                         self.model_allocations[model_id] = allocation
-                        # Log event
                         logger.info(
                             f"✅ Allocated {vram_required / 1024 / 1024:.1f}MB "
                             f"VRAM for {model_id}"
                         )
-
                         self._log_allocation_event("allocated", allocation)
                         return allocation
 
@@ -444,7 +439,7 @@ class VRAMManager:
                             allocation.status = "optimized_to_gpu"
                             optimized = True
                             logger.info(
-                                "🚀 Optimized: Moved critical model "
+                                f"🚀 Optimized: Moved critical model "
                                 f"{allocation.model_id} to GPU"
                             )
 
@@ -453,3 +448,13 @@ class VRAMManager:
         except Exception as e:
             logger.error(f"❌ Error optimizing allocations: {e}")
             return False
+
+    async def shutdown(self) -> None:
+        """Shutdown the VRAM manager"""
+        logger.info("🔌 Shutting down VRAM Manager...")
+        async with self.lock:
+            # Clear all allocations
+            self.model_allocations.clear()
+            self.allocated_vram = 0
+            self.allocation_history.clear()
+        logger.info("✅ VRAM Manager shut down")

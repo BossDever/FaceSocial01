@@ -1,5 +1,3 @@
-# cSpell:disable
-# mypy: ignore-errors
 """
 Enhanced Face Detection Service
 ระบบตรวจจับใบหน้าอัจฉริยะที่รองรับโมเดล YOLOv9c, YOLOv9e และ YOLOv11m
@@ -31,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 class QualityCategory(Enum):
     """ระดับคุณภาพของใบหน้า"""
-
     EXCELLENT = "excellent"  # 80-100
     GOOD = "good"  # 70-79
     ACCEPTABLE = "acceptable"  # 40-69
@@ -341,17 +338,17 @@ class FaceDetectionService:
         model_name: Optional[str] = None,
         conf_threshold: Optional[float] = None,
         iou_threshold: Optional[float] = None,
-        min_face_size: Optional[int] = None,  # Not directly used
+        min_face_size: Optional[int] = None,
         max_faces: Optional[int] = None,
-        return_landmarks: bool = False,  # Not directly used
+        return_landmarks: bool = False,
         min_quality_threshold: Optional[float] = None,
         use_fallback: bool = True,
         fallback_strategy: Optional[List[Dict[str, Any]]] = None,
-        force_cpu: bool = False,  # Not directly used
+        force_cpu: bool = False,
     ) -> DetectionResult:
         """
         Detect faces in an image, automatically selecting the best model.
-        Includes an improved fallback system. (Refactored for C901)
+        Includes an improved fallback system.
         """
         start_time_total = time.time()
 
@@ -361,13 +358,11 @@ class FaceDetectionService:
             return error_result
 
         # Step 2: Validate image input
-        # image_np is np.ndarray if validation_error is None
         image_np, validation_error = self._validate_image_input(
             image_input, start_time_total
         )
         if validation_error:
             return validation_error
-        # image_np is now a valid np.ndarray
 
         # Step 3: Setup detection parameters
         primary_model_name, current_conf, current_iou, current_min_quality = (
@@ -377,8 +372,6 @@ class FaceDetectionService:
         )
 
         # Step 4: Attempt primary detection
-        # _attempt_primary_detection returns:
-        # (faces: List[FaceDetection], model_used: str, error: Optional[str])
         primary_faces, primary_model_used, primary_error = (
             await self._attempt_primary_detection(
                 image_np,
@@ -395,31 +388,26 @@ class FaceDetectionService:
         fallback_was_used = False
 
         # Step 5: Attempt fallback detection if necessary
-        # Condition: fallback enabled AND (primary found no faces OR primary had error)
         primary_detection_failed_or_empty = not primary_faces or primary_error
         if use_fallback and primary_detection_failed_or_empty:
             self.logger.info(
                 "Primary detection: no faces or error. Initiating fallback."
             )
-            # _attempt_fallback_detection returns: (detected_faces, model_used,
-            # fallback_triggered, error_message)
             fb_faces, fb_model_used, fb_triggered, fb_error = (
                 await self._attempt_fallback_detection(
                     image_np,
-                    primary_faces,  # Pass original primary faces
-                    primary_error,  # Pass original primary error
+                    primary_faces,
+                    primary_error,
                     fallback_strategy,
                     current_min_quality,
                 )
             )
 
-            if fb_triggered:  # Fallback mechanism was engaged
+            if fb_triggered:
                 fallback_was_used = True
-                # Fallback results take precedence.
-                # _attempt_fallback_detection returns best faces (new or primary).
                 final_faces = fb_faces
-                final_model_used = fb_model_used  # Model for fb_faces
-                final_error = fb_error  # Error state after fallbacks
+                final_model_used = fb_model_used
+                final_error = fb_error
 
                 # Clear error if fallback succeeded
                 if fb_faces and not fb_error:
@@ -435,7 +423,7 @@ class FaceDetectionService:
         total_service_time = time.time() - start_time_total
         self._update_performance_stats(
             final_faces,
-            final_model_used,  # Model that produced final_faces or last attempted
+            final_model_used,
             total_service_time,
             fallback_was_used,
         )
@@ -531,9 +519,9 @@ class FaceDetectionService:
         current_conf: float,
         current_iou: float,
         current_min_quality: float,
-    ) -> Tuple[List[FaceDetection], str, Optional[str]]:  # Changed signature
+    ) -> Tuple[List[FaceDetection], str, Optional[str]]:
         processed_faces: List[FaceDetection] = []
-        model_used = "N/A"  # Default if model isn't found or loaded
+        model_used = "N/A"
         error_msg = None
         detection_time_ms = 0.0
 
@@ -547,10 +535,8 @@ class FaceDetectionService:
             if not detector.model_loaded:
                 error_msg = f"Primary model {primary_model} not loaded"
                 self.logger.error(error_msg)
-                # Model used is primary_model, but it's not loaded.
                 return processed_faces, primary_model, error_msg
 
-            # Model found and loaded, this is the one used for this attempt.
             model_used = primary_model
 
             start_detect_time = time.time()
@@ -562,7 +548,7 @@ class FaceDetectionService:
             processed_faces = self._process_raw_detections(
                 raw_bboxes,
                 image,
-                primary_model,  # Model that performed detection
+                primary_model,
                 detection_time_ms,
                 current_min_quality,
             )
@@ -570,12 +556,10 @@ class FaceDetectionService:
                 f"Primary detection ({primary_model}): "
                 f"{len(processed_faces)} valid faces"
             )
-            # Early exit logic removed; decision in detect_faces
 
         except Exception as e:
             error_msg = f"Error in primary detection ({primary_model}): {str(e)}"
             self.logger.error(error_msg, exc_info=True)
-            # Ensure model_used is correct if error occurred after model selection
             if primary_model in self.models:
                 model_used = primary_model
 
@@ -589,11 +573,8 @@ class FaceDetectionService:
         fallback_strategy_override: Optional[List[Dict[str, Any]]],
         current_min_quality: float,
     ) -> Tuple[List[FaceDetection], str, bool, Optional[str]]:
-        detected_faces_final = list(
-            detected_faces_primary
-        )  # Start with primary results
+        detected_faces_final = list(detected_faces_primary)
         model_used_for_detection = "N/A"
-        # If primary detection yielded some results, assume that model was used
         if detected_faces_primary:
             model_used_for_detection = (
                 detected_faces_primary[0].model_used
@@ -604,17 +585,16 @@ class FaceDetectionService:
         fallback_actually_used = False
         final_error_message = error_primary
 
-        if not detected_faces_final or error_primary:  # Condition to trigger fallback
+        if not detected_faces_final or error_primary:
             self.logger.info("Initiating fallback detection system")
             fallback_actually_used = True
-            final_error_message = None  # Reset error message if fallback is attempted
+            final_error_message = None
 
             fallback_strategy = fallback_strategy_override or self.fallback_config.get(
                 "fallback_models", []
             )
 
             for fb_attempt, fb_config in enumerate(fallback_strategy):
-                # Stop if primary found faces and had no error
                 if detected_faces_final and not error_primary:
                     break
 
@@ -627,18 +607,17 @@ class FaceDetectionService:
                         model_used_for_detection = fb_config.get(
                             "model_name", "unknown"
                         )
-                        final_error_message = None  # Clear error if fallback succeeds
+                        final_error_message = None
                         log_msg = (
                             f"Fallback successful with {model_used_for_detection}"
                         )
                         self.logger.info(log_msg)
-                        break  # Exit fallback loop on success
+                        break
                 except Exception as e:
                     self.logger.error(
                         f"Fallback attempt {fb_attempt + 1} "
                         f"({fb_config.get('model_name', 'unknown')}) failed: {e}"
                     )
-                    # Keep the first error encountered during fallback
                     if not final_error_message:
                         final_error_message = f"Fallback failed: {e}"
                     continue
@@ -649,7 +628,6 @@ class FaceDetectionService:
                     "failed to find faces."
                 )
             elif not detected_faces_final and final_error_message and error_primary:
-                # If primary had an error and fallbacks also failed or had errors
                 final_error_message = (
                     f"Primary error: {error_primary}. "
                     f"Fallback error: {final_error_message}"
@@ -907,7 +885,7 @@ class FaceDetectionService:
             logger.error(f"Error getting service info: {e}")
             return {"service_status": "error", "error": str(e)}
 
-    async def cleanup(self):
+    async def shutdown(self):
         """ทำความสะอาดทรัพยากร"""
         try:
             logger.info("🧹 Cleaning up Face Detection Service...")

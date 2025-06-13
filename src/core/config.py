@@ -15,8 +15,6 @@ class Settings:
     # Project Information
     project_name: str = "Face Recognition System"
     version: str = "2.0.0"
-    # Professional Face Detection, Recognition & Analysis System
-    # with GPU optimization
     description: str = (
         "Professional Face Detection, Recognition & Analysis System "
         "with GPU optimization"

@@ -1,5 +1,3 @@
-# cSpell:disable
-# mypy: ignore-errors
 """
 ระบบโมเดล YOLO สำหรับการตรวจจับใบหน้า
 รองรับ YOLOv9c, YOLOv9e และ YOLOv11m
@@ -14,7 +12,7 @@ import numpy as np
 import cv2
 import torch
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple, Sequence # Added Sequence
+from typing import List, Dict, Any, Tuple, Sequence
 import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
@@ -75,14 +73,7 @@ class FaceDetector(ABC):
         แปลงรูปภาพให้เหมาะสมกับการใช้งานกับโมเดล - Enhanced
         Returns:
             input_tensor: The preprocessed image tensor for the model.
-            scale_factors: A dictionary containing:
-                "scale": The scale factor used to resize the image.
-                "x_offset": The horizontal padding added.
-                "y_offset": The vertical padding added.
-                "original_width": The original width of the image.
-                "original_height": The original height of the image.
-                "new_width": Width of the image after scaling, before padding.
-                "new_height": Height of the image after scaling, before padding.
+            scale_factors: A dictionary containing scale and offset information.
         """
         try:
             # รองรับทั้งชื่อไฟล์และ numpy array
@@ -93,7 +84,7 @@ class FaceDetector(ABC):
                 if image is None:
                     raise ValueError(f"Cannot read image file: {image_input}")
             elif isinstance(image_input, np.ndarray):
-                image = image_input.copy() # Work on a copy
+                image = image_input.copy()
             else:
                 raise TypeError(
                     "Image input must be a file path (str) or a NumPy array."
@@ -137,8 +128,8 @@ class FaceDetector(ABC):
                 "y_offset": y_offset,
                 "original_width": original_width,
                 "original_height": original_height,
-                "new_width": new_width, # Added for clarity
-                "new_height": new_height, # Added for clarity
+                "new_width": new_width,
+                "new_height": new_height,
             }
             return input_tensor, scale_factors
         except Exception as e:
@@ -259,7 +250,6 @@ class YOLOv9ONNXDetector(FaceDetector):
     ) -> List[np.ndarray]:
         """ตรวจจับใบหน้าในรูปภาพด้วย YOLO v9 - Enhanced"""
         if not self.model_loaded:
-            # This check should ideally be more specific, e.g., self.session is None
             logger.error(
                 f"Model {self.model_name} not loaded or session not initialized."
             )
@@ -277,7 +267,6 @@ class YOLOv9ONNXDetector(FaceDetector):
             outputs = self.session.run(
                 self.output_names, {self.input_name: input_tensor}
             )
-            # Removed retry logic for brevity here, can be added back if needed
 
             inference_duration = time.time() - inference_start_time
             logger.debug(f"{self.model_name} inference took {inference_duration:.4f}s")
@@ -318,7 +307,6 @@ class YOLOv9ONNXDetector(FaceDetector):
         """
         แปลงผลลัพธ์จากโมเดล YOLO v9 ONNX.
         Handles output shape (1, 5, 8400) where 5 = xc, yc, w, h, conf.
-        Coordinates are assumed to be pixel values on the 640x640 model input.
         """
         try:
             if not outputs or len(outputs) == 0 or outputs[0] is None:
@@ -338,55 +326,47 @@ class YOLOv9ONNXDetector(FaceDetector):
                 return []
 
             # Transpose from (5, num_detections) to (num_detections, 5)
-            # after removing the batch dimension.
-            predictions_data = raw_predictions_tensor[0]  # Shape (5, num_detections)
-            transposed_predictions = np.transpose(
-                predictions_data, (1, 0)
-            )  # Shape (num_detections, 5)
+            predictions_data = raw_predictions_tensor[0]
+            transposed_predictions = np.transpose(predictions_data, (1, 0))
 
             detections = []
 
             scale = scale_factors["scale"]
-            x_offset = scale_factors["x_offset"] # dw: padding on left
-            y_offset = scale_factors["y_offset"] # dh: padding on top
+            x_offset = scale_factors["x_offset"]
+            y_offset = scale_factors["y_offset"]
             original_width = scale_factors["original_width"]
             original_height = scale_factors["original_height"]
 
             for pred in transposed_predictions:
                 # pred is [xc, yc, w, h, conf]
-                # These are pixel coordinates on the 640x640 letterboxed/padded image
                 x_center, y_center, width, height, confidence = pred
 
                 if confidence < conf_threshold:
                     continue
 
-                # Convert from center format to corner format (on 640x640 padded image)
+                # Convert from center format to corner format
                 x1_padded = x_center - (width / 2)
                 y1_padded = y_center - (height / 2)
                 x2_padded = x_center + (width / 2)
                 y2_padded = y_center + (height / 2)
 
                 # Convert back to original image coordinates
-                # Step 1: Remove padding to get coordinates relative to the scaled image
-                # (the image content within the 640x640 padded input)
                 x1_scaled_img = x1_padded - x_offset
                 y1_scaled_img = y1_padded - y_offset
                 x2_scaled_img = x2_padded - x_offset
                 y2_scaled_img = y2_padded - y_offset
 
-                # Step 2: Scale back to original image dimensions
-                # The 'scale' factor is min(target_dim / orig_dim).
-                # So, orig_coord = scaled_coord / scale.
+                # Scale back to original image dimensions
                 x1_orig = x1_scaled_img / scale
                 y1_orig = y1_scaled_img / scale
                 x2_orig = x2_scaled_img / scale
                 y2_orig = y2_scaled_img / scale
 
                 # Clip to original image bounds
-                x1 = max(0, min(int(x1_orig), original_width -1))
-                y1 = max(0, min(int(y1_orig), original_height -1))
-                x2 = max(0, min(int(x2_orig), original_width -1))
-                y2 = max(0, min(int(y2_orig), original_height -1))
+                x1 = max(0, min(int(x1_orig), original_width - 1))
+                y1 = max(0, min(int(y1_orig), original_height - 1))
+                x2 = max(0, min(int(x2_orig), original_width - 1))
+                y2 = max(0, min(int(y2_orig), original_height - 1))
 
                 # Ensure valid box
                 if x1 < x2 and y1 < y2:
@@ -397,7 +377,7 @@ class YOLOv9ONNXDetector(FaceDetector):
             if not detections:
                 return []
 
-            # Apply NMS using the existing _nms method
+            # Apply NMS
             detections_array = np.array(detections)
             final_detections = self._nms(detections_array, iou_threshold)
             return final_detections
@@ -499,7 +479,7 @@ class YOLOv11Detector(FaceDetector):
 
             logger.info(f"✅ {self.model_name} loaded successfully on {device}")
             return True
-        except Exception as e:  # Corrected indentation for except block
+        except Exception as e:
             logger.error(f"Failed to load {self.model_name}: {e}")
             self.model_loaded = False
             return False
@@ -509,7 +489,7 @@ class YOLOv11Detector(FaceDetector):
         return self.input_size
 
     def _process_yolov11_results(
-        self, results: Any, original_image_shape: Sequence[int]  # Changed type hint
+        self, results: Any, original_image_shape: Sequence[int]
     ) -> List[np.ndarray]:
         """Helper function to process detection results from YOLOv11 model."""
         detections = []
@@ -532,20 +512,16 @@ class YOLOv11Detector(FaceDetector):
                 if box_data.conf is not None and len(box_data.conf) > 0:
                     conf = float(box_data.conf[0])
 
-                if x1 < x2 and y1 < y2:  # Ensure coordinates are valid
+                if x1 < x2 and y1 < y2:
                     detections.append(np.array([x1, y1, x2, y2, conf]))
                 else:
                     logger.warning(
-                        "Invalid box coordinates. Norm: (%.2f, %.2f, %.2f, %.2f). "
-                        "Abs: (%d, %d, %d, %d). Image HxW: %dx%d.",
-                        x1_norm, y1_norm, x2_norm, y2_norm,
-                        x1, y1, x2, y2,
-                        h, w
+                        f"Invalid box coordinates. Norm: ({x1_norm:.2f}, {y1_norm:.2f}, "
+                        f"{x2_norm:.2f}, {y2_norm:.2f}). "
+                        f"Abs: ({x1}, {y1}, {x2}, {y2}). Image HxW: {h}x{w}."
                     )
             else:
-                logger.warning(
-                    "box_data.xyxyn is None or empty, skipping this box."
-                )
+                logger.warning("box_data.xyxyn is None or empty, skipping this box.")
         return detections
 
     def detect(
@@ -567,7 +543,7 @@ class YOLOv11Detector(FaceDetector):
                 if img_input is None:
                     raise ValueError(f"Cannot read image file: {image}")
             elif isinstance(image, np.ndarray):
-                img_input = image.copy()  # Use a copy to avoid modifying the original
+                img_input = image.copy()
             else:
                 raise TypeError(
                     "Unsupported image type. Must be file path (str) or NumPy array."
@@ -605,13 +581,12 @@ class YOLOv11Detector(FaceDetector):
 
         except Exception as e:
             logger.error(
-                "Detection failed for %s on image of shape %s: %s",
-                self.model_name,
-                str(img_input_shape_for_error_log), # Ensure it\'s a string
-                e,
+                f"Detection failed for {self.model_name} on image of shape "
+                f"{str(img_input_shape_for_error_log)}: {e}",
                 exc_info=True
             )
             return []
+
 
 def fallback_opencv_detection(
     image: np.ndarray,
@@ -622,8 +597,6 @@ def fallback_opencv_detection(
     """
     Fallback face detection using OpenCV's Haar Cascade classifier.
     Returns a list of bounding boxes in [x1, y1, x2, y2, confidence] format.
-    Confidence is set to a fixed value (e.g., 0.5) as Haar cascades don't
-    provide it.
     """
     try:
         # Path to Haar cascade file from cv2.data
@@ -632,14 +605,12 @@ def fallback_opencv_detection(
         )
         if not os.path.exists(cascade_path):
             logger.error(f"Haar cascade file not found at {cascade_path}")
-            # Attempt an alternative common path (less ideal)
+            # Attempt an alternative common path
             alt_cascade_path = "haarcascade_frontalface_default.xml"
             if os.path.exists(alt_cascade_path):
                 cascade_path = alt_cascade_path
             else:
-                logger.error(
-                    f"Alternative Haar cascade not found: {alt_cascade_path}"
-                )
+                logger.error(f"Alternative Haar cascade not found: {alt_cascade_path}")
                 return []
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
@@ -674,5 +645,3 @@ def fallback_opencv_detection(
     except Exception as e:
         logger.error(f"Error in fallback_opencv_detection: {e}", exc_info=True)
         return []
-
-# Ensure this function is exported if __all__ is defined in an __init__.py
