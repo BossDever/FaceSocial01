@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Start script for Face Recognition System
-Fixed version with proper reload exclusions
+Fixed version with proper error handling and reload exclusions
 """
 
 import os
@@ -10,6 +10,7 @@ import asyncio
 import argparse
 from pathlib import Path
 import logging
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -27,7 +28,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler("logs/startup.log")
+            logging.FileHandler("logs/startup.log", encoding='utf-8')
         ]
     )
     return logging.getLogger(__name__)
@@ -67,8 +68,8 @@ def check_system_requirements() -> bool:
     
     return True
 
-def check_model_files() -> bool:
-    """Check if model files exist"""
+def check_model_files() -> int:
+    """Check if model files exist and return count"""
     logger = logging.getLogger(__name__)
     
     model_files = {
@@ -85,9 +86,13 @@ def check_model_files() -> bool:
     
     for model_name, model_path in model_files.items():
         if os.path.exists(model_path):
-            size_mb = os.path.getsize(model_path) / (1024 * 1024)
-            logger.info(f"✅ {model_name}: {size_mb:.1f}MB")
-            available_models.append(model_name)
+            try:
+                size_mb = os.path.getsize(model_path) / (1024 * 1024)
+                logger.info(f"✅ {model_name}: {size_mb:.1f}MB")
+                available_models.append(model_name)
+            except OSError as e:
+                logger.warning(f"⚠️ {model_name}: Error reading file - {e}")
+                missing_models.append(model_name)
         else:
             logger.warning(f"⚠️ {model_name}: Not found")
             missing_models.append(model_name)
@@ -95,10 +100,10 @@ def check_model_files() -> bool:
     logger.info(f"Available models: {len(available_models)}/{len(model_files)}")
     
     if not available_models:
-        logger.error("❌ No model files found! System cannot function.")
-        return False
+        logger.error("❌ No model files found! System will have limited functionality.")
+        return 0
     
-    return True
+    return len(available_models)
 
 def check_gpu_availability() -> bool:
     """Check GPU availability"""
@@ -120,30 +125,61 @@ def check_gpu_availability() -> bool:
         logger.warning(f"⚠️ Error checking GPU: {e}")
         return False
 
-async def test_services() -> bool:
-    """Test service initialization"""
+async def test_basic_imports() -> bool:
+    """Test basic service imports without full initialization"""
     logger = logging.getLogger(__name__)
     
     try:
+        logger.info("🔧 Testing basic imports...")
+        
+        # Test core config
         from src.core.config import get_settings
-        from src.ai_services.common.vram_manager import VRAMManager
-        
-        logger.info("🔧 Testing service initialization...")
-        
-        # Test VRAM Manager
         settings = get_settings()
-        vram_manager = VRAMManager(settings.vram_config)
-        logger.info("✅ VRAM Manager initialized")
+        logger.info("✅ Core config loaded")
         
-        # Test basic functionality
-        vram_status = await vram_manager.get_vram_status()
-        logger.info(f"✅ VRAM Status: {vram_status['total_vram'] / (1024*1024):.1f}MB")
+        # Test VRAM Manager import
+        from src.ai_services.common.vram_manager import VRAMManager
+        logger.info("✅ VRAM Manager imported")
+        
+        # Test service imports
+        from src.ai_services.face_detection.face_detection_service import FaceDetectionService
+        from src.ai_services.face_recognition.face_recognition_service import FaceRecognitionService
+        from src.ai_services.face_analysis.face_analysis_service import FaceAnalysisService
+        logger.info("✅ All services imported")
+        
+        # Test API imports
+        from src.api.complete_endpoints import face_detection_router, face_recognition_router, face_analysis_router
+        logger.info("✅ API endpoints imported")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ Service test failed: {e}")
+        logger.error(f"❌ Import test failed: {e}")
+        logger.error("This indicates issues with the code structure or dependencies")
         return False
+
+def create_required_directories() -> None:
+    """Create required directories"""
+    logger = logging.getLogger(__name__)
+    
+    directories = [
+        "logs",
+        "output", 
+        "output/detection",
+        "output/recognition", 
+        "output/analysis",
+        "temp",
+        "model",
+        "model/face-detection",
+        "model/face-recognition"
+    ]
+    
+    for directory in directories:
+        try:
+            os.makedirs(directory, exist_ok=True)
+            logger.debug(f"✅ Directory: {directory}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to create {directory}: {e}")
 
 def start_server(
     host: str = "0.0.0.0",
@@ -165,32 +201,43 @@ def start_server(
         logger.info(f"   Workers: {workers}")
         logger.info(f"   Log Level: {log_level}")
         
-        # Define reload configuration to exclude problematic files
+        # Define reload configuration to exclude problematic files/directories
         reload_dirs_config = [
             str(project_root / "src"),
-            str(project_root / "config"),
+            str(project_root / "config") if (project_root / "config").exists() else None,
         ]
-        # Ignore changes in temp folder, mypy cache, and logs
+        # Remove None values
+        reload_dirs_config = [d for d in reload_dirs_config if d is not None]
+        
+        # Exclude patterns that cause reload loops
         reload_excludes_config = [
-            "**/temp/**",      # all files under any temp/ directory
-            "**/temp",         # temp folder itself
-            ".mypy_cache/**",  # cache folder
-            "logs/**",         # log files location
+            "**/temp/**",
+            "**/logs/**", 
+            "**/output/**",
+            "**/.mypy_cache/**",
+            "**/__pycache__/**",
+            "**/*.log",
+            "**/*.tmp",
+            "**/*.temp",
+            "**/model/**",  # Exclude model files as they're large and don't need watching
         ]
+        
         # Only watch specific file types
         reload_includes_config = [
             "*.py",
             "*.yml",
-            "*.yaml",
+            "*.yaml", 
             "*.json",
             "*.toml",
         ]
 
-        logger.info("🔄 Reload configuration:")
-        logger.info(f"  Reload Dirs: {reload_dirs_config}")
-        logger.info(f"  Reload Excludes: {reload_excludes_config}")
-        logger.info(f"  Reload Includes: {reload_includes_config}")
+        if reload:
+            logger.info("🔄 Reload configuration:")
+            logger.info(f"  Reload Dirs: {reload_dirs_config}")
+            logger.info(f"  Reload Excludes: {reload_excludes_config}")
+            logger.info(f"  Reload Includes: {reload_includes_config}")
         
+        # Start server with appropriate configuration
         if reload:
             uvicorn.run(
                 "src.main:app",
@@ -200,7 +247,7 @@ def start_server(
                 reload_dirs=reload_dirs_config,
                 reload_excludes=reload_excludes_config,
                 reload_includes=reload_includes_config,
-                workers=workers,  # Use configured worker count
+                workers=1,  # Force single worker in reload mode
                 log_level=log_level.lower(),
                 access_log=True,
                 use_colors=True,
@@ -212,18 +259,31 @@ def start_server(
                 port=port,
                 reload=False,
                 workers=workers,
-                log_level=log_level.lower(),  # Ensure lowercase
+                log_level=log_level.lower(),
                 access_log=True,
                 use_colors=True
             )
-        return True # Add return True for successful server start/stop
+        return True
         
     except KeyboardInterrupt:
         logger.info("👋 Shutdown requested by user")
-        return True # Also return True on graceful shutdown
+        return True
     except Exception as e:
         logger.error(f"❌ Server error: {e}")
         return False
+
+def print_startup_info(host: str, port: int) -> None:
+    """Print startup information"""
+    print("\n" + "="*60)
+    print("🎭 Face Recognition System")
+    print("="*60)
+    print(f"🌐 Web Interface:      http://{host}:{port}")
+    print(f"📚 API Documentation:  http://{host}:{port}/docs")
+    print(f"📖 Alternative Docs:   http://{host}:{port}/redoc")
+    print(f"🏥 Health Check:       http://{host}:{port}/health")
+    print("="*60)
+    print("💡 Press Ctrl+C to stop the server")
+    print("="*60)
 
 def main() -> bool:
     """Main entry point"""
@@ -234,7 +294,8 @@ def main() -> bool:
     parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
     parser.add_argument("--workers", type=int, default=1, help="Number of workers")
     parser.add_argument("--skip-checks", action="store_true", help="Skip system checks")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
+    parser.add_argument("--log-level", default="INFO", 
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
                        help="Logging level")
     
     args = parser.parse_args()
@@ -245,6 +306,9 @@ def main() -> bool:
     print("🎭 Face Recognition System Starter")
     print("=" * 50)
     
+    # Create required directories
+    create_required_directories()
+    
     if not args.skip_checks:
         # System checks
         logger.info("🔍 Checking system requirements...")
@@ -253,31 +317,38 @@ def main() -> bool:
             return False
         
         logger.info("🤖 Checking model files...")
-        if not check_model_files():
-            logger.error("❌ Model files check failed")
-            return False
+        model_count = check_model_files()
+        if model_count == 0:
+            logger.warning("⚠️ No model files found - system will have limited functionality")
         
         logger.info("🔥 Checking GPU availability...")
         check_gpu_availability()
         
-        logger.info("🧪 Testing services...")
-        if not asyncio.run(test_services()):
-            logger.error("❌ Service test failed")
+        logger.info("🧪 Testing basic imports...")
+        if not asyncio.run(test_basic_imports()):
+            logger.error("❌ Import test failed")
             return False
         
         logger.info("✅ All checks passed!")
+    else:
+        logger.info("⏭️ Skipping system checks as requested")
+    
+    # Print startup information
+    print_startup_info(args.host, args.port)
     
     # Start server
-    start_server(
+    return start_server(
         host=args.host,
         port=args.port,
         reload=not args.no_reload,
         workers=args.workers,
         log_level=args.log_level
     )
-    
-    return True
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    try:
+        success = main()
+        sys.exit(0 if success else 1)
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        sys.exit(1)

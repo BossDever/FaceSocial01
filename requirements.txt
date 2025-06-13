@@ -1,5 +1,5 @@
 # Face Recognition System Requirements
-# For SuwitBoss/wofk - Complete Version
+# Fixed version with compatible versions and proper dependencies
 
 # Core Framework
 fastapi==0.115.12
@@ -12,10 +12,8 @@ torch==2.5.1
 torchvision==0.20.1
 torchaudio==2.5.1
 opencv-python==4.11.0.86
-opencv-contrib-python==4.11.0.86
 pillow==11.1.0
 numpy==1.26.4
-scikit-image==0.25.2
 scikit-learn==1.7.0
 
 # ONNX Runtime (GPU Support)
@@ -25,12 +23,7 @@ onnxruntime-gpu==1.22.0
 ultralytics==8.3.152
 
 # Image Processing
-albumentations==2.0.8
 imageio==2.37.0
-
-# Face Recognition Libraries
-insightface==0.7.3
-facexlib==0.3.0
 
 # Web & API
 aiofiles==0.8.0
@@ -51,12 +44,23 @@ black==25.1.0
 isort==5.13.0
 mypy==1.8.0
 
-# Analysis & Visualization (Optional)
-jupyter==1.1.1
-matplotlib==3.10.3
-seaborn==0.13.2
-
 # Additional dependencies for complete functionality
 httpx==0.24.1
 starlette==0.41.3
 anyio==4.4.0
+
+# Optional image processing libraries
+# scikit-image==0.25.2  # Commented out to avoid conflicts
+# albumentations==2.0.8  # Commented out to reduce dependencies
+# insightface==0.7.3  # Commented out due to potential conflicts
+# facexlib==0.3.0  # Commented out due to potential conflicts
+
+# Analysis & Visualization (Optional)
+matplotlib==3.10.3
+seaborn==0.13.2
+
+# Jupyter (Optional - for development)
+# jupyter==1.1.1  # Commented out to reduce dependencies
+
+# CPU fallback for ONNX Runtime (uncomment if GPU not available)
+# onnxruntime==1.22.0

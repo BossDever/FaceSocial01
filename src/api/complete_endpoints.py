@@ -1,30 +1,17 @@
 """
 Complete API Endpoints for Face Analysis System
-Updated version with JSON API support for bulk operations
+Fixed version with proper error handling and type hints
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request
 from fastapi.responses import JSONResponse
-from typing import Optional, Dict, Any, cast, Union
+from typing import Optional, Dict, Any, Union
 import cv2
 import numpy as np
 from pydantic import BaseModel
 import base64
 import json
 import logging
-
-from src.ai_services.face_recognition.models import RecognitionModel
-
-# Import service types for dependency injection
-from src.ai_services.face_detection.face_detection_service import \
-    FaceDetectionService
-from src.ai_services.face_recognition.face_recognition_service import \
-    FaceRecognitionService
-from src.ai_services.face_analysis.face_analysis_service import \
-    FaceAnalysisService
-from src.ai_services.face_analysis.models import (
-    AnalysisConfig, FaceAnalysisJSONRequest, AnalysisMode
-)
 
 logger = logging.getLogger(__name__)
 
@@ -39,49 +26,53 @@ class DetectionRequest(BaseModel):
 
 class RecognitionRequest(BaseModel):
     face_image_base64: str
-    gallery: dict
+    gallery: Dict[str, Any]
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
 
-class AddFaceRequest(BaseModel):
-    person_id: str
-    face_image_base64: str
-    metadata: Optional[dict] = None
-
-# NEW: JSON API Models for bulk operations
-class AddFaceJSONRequest(BaseModel): # Local definition for this specific request type
+class AddFaceJSONRequest(BaseModel):
     person_id: str
     person_name: Optional[str] = None
     face_image_base64: str
     model_name: Optional[str] = "facenet"
-    metadata: Optional[dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
-class AnalysisRequest(BaseModel): # Potentially unused, review if needed
+class FaceAnalysisJSONRequest(BaseModel):
     image_base64: str
-    mode: str = "full_analysis"
-    gallery: Optional[dict] = None
-    config: Optional[dict] = None
-
-# FaceAnalysisJSONRequest is imported from src.ai_services.face_analysis.models
+    mode: Optional[str] = "full_analysis"
+    config: Optional[Dict[str, Any]] = None
+    gallery: Optional[Dict[str, Any]] = None
 
 # === UTILITY FUNCTIONS ===
 def decode_base64_image(image_base64: str) -> np.ndarray:
     """Decode a base64 encoded image to an OpenCV image"""
-    image_data = base64.b64decode(image_base64)
-    image_array = np.frombuffer(image_data, np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-    return image
+    try:
+        image_data = base64.b64decode(image_base64)
+        image_array = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Failed to decode image")
+        return image
+    except Exception as e:
+        logger.error(f"Failed to decode base64 image: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
 
 def decode_uploaded_image(image_data: bytes) -> np.ndarray:
     """Decode uploaded image file to an OpenCV image"""
-    image_array = np.frombuffer(image_data, np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-    return image
+    try:
+        image_array = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Failed to decode image")
+        return image
+    except Exception as e:
+        logger.error(f"Failed to decode uploaded image: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
 
 # === FACE DETECTION API ===
 face_detection_router = APIRouter()
 
-def get_face_detection_service(request: Request) -> FaceDetectionService:
+def get_face_detection_service(request: Request):
     """Dependency to get face detection service from app.state"""
     service = getattr(request.app.state, "face_detection_service", None)
     if service is None:
@@ -89,11 +80,11 @@ def get_face_detection_service(request: Request) -> FaceDetectionService:
             status_code=503,
             detail="Face detection service not available or not initialized properly."
         )
-    return cast(FaceDetectionService, service)
+    return service
 
 @face_detection_router.get("/face-detection/health")
 async def face_detection_health(
-    service: FaceDetectionService = Depends(get_face_detection_service)
+    service = Depends(get_face_detection_service)
 ) -> Dict[str, Any]:
     """Health check for face detection service"""
     try:
@@ -104,8 +95,8 @@ async def face_detection_health(
             "service_info": service_info
         }
     except Exception as e:
-        detail = f"Health check failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Face detection health check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 @face_detection_router.post("/face-detection/detect")
 async def detect_faces_endpoint(
@@ -115,17 +106,13 @@ async def detect_faces_endpoint(
     iou_threshold: float = Form(0.4),
     max_faces: int = Form(50),
     min_quality_threshold: float = Form(40.0),
-    service: FaceDetectionService = Depends(get_face_detection_service)
+    service = Depends(get_face_detection_service)
 ) -> JSONResponse:
     """Detect faces in uploaded image"""
     try:
-        # Read image
+        # Read and decode image
         image_data = await file.read()
-        image_array = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image format")
+        image = decode_uploaded_image(image_data)
 
         # Detect faces
         result = await service.detect_faces(
@@ -139,24 +126,21 @@ async def detect_faces_endpoint(
 
         return JSONResponse(content=result.to_dict())
 
+    except HTTPException:
+        raise
     except Exception as e:
-        detail = f"Detection failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Face detection failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
 @face_detection_router.post("/face-detection/detect-base64")
 async def detect_faces_base64(
     request: DetectionRequest,
-    service: FaceDetectionService = Depends(get_face_detection_service)
+    service = Depends(get_face_detection_service)
 ) -> JSONResponse:
     """Detect faces in base64 encoded image"""
     try:
         # Decode base64 image
-        image_data = base64.b64decode(request.image_base64)
-        image_array = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image format")
+        image = decode_base64_image(request.image_base64)
 
         # Detect faces
         result = await service.detect_faces(
@@ -170,14 +154,16 @@ async def detect_faces_base64(
 
         return JSONResponse(content=result.to_dict())
 
+    except HTTPException:
+        raise
     except Exception as e:
-        detail = f"Detection failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Face detection failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
 # === FACE RECOGNITION API ===
 face_recognition_router = APIRouter()
 
-def get_face_recognition_service(request: Request) -> FaceRecognitionService:
+def get_face_recognition_service(request: Request):
     """Dependency to get face recognition service from app.state"""
     service = getattr(request.app.state, "face_recognition_service", None)
     if service is None:
@@ -185,112 +171,89 @@ def get_face_recognition_service(request: Request) -> FaceRecognitionService:
             status_code=503,
             detail="Face recognition service not available or not initialized properly."
         )
-    return cast(FaceRecognitionService, service)
+    return service
 
 @face_recognition_router.get("/face-recognition/health")
 async def face_recognition_health(
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
     """Health check for face recognition service"""
     try:
-        # Check if service has get_performance_stats method
-        if hasattr(service, 'get_performance_stats'):
-            stats_result = service.get_performance_stats()
-            performance_stats_dict = {}
-            if isinstance(stats_result, dict):
-                performance_stats_dict = stats_result
-            elif hasattr(stats_result, 'to_dict') and callable(stats_result.to_dict):
-                performance_stats_dict = stats_result.to_dict()
-        else:
-            performance_stats_dict = {"message": "Performance stats not available"}
-
+        service_info = service.get_service_info()
         return {
             "status": "healthy",
             "service": "face_recognition",
-            "performance_stats": performance_stats_dict
+            "service_info": service_info
         }
     except Exception as e:
-        detail = f"Health check failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Face recognition health check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 @face_recognition_router.post("/face-recognition/extract-embedding")
 async def extract_embedding_endpoint(
     file: UploadFile = File(...),
     model_name: str = Form("facenet"),
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
     """Extract face embedding from uploaded image"""
     try:
+        # Read and decode image
         image_data = await file.read()
-        image_array = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        image = decode_uploaded_image(image_data)
 
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image format")
+        # Convert image to bytes for service
+        _, buffer = cv2.imencode('.jpg', image)
+        image_bytes = buffer.tobytes()
 
-        try:
-            model_enum = RecognitionModel(model_name.lower())
-        except ValueError:
+        # Extract embedding using service method
+        result = await service.add_face_from_image(
+            image_bytes=image_bytes,
+            person_name="temp",
+            person_id="temp",
+            model_name=model_name
+        )
+
+        if not result.get('success'):
             raise HTTPException(
-                status_code=400, detail=f"Invalid model name: {model_name}"
+                status_code=400, 
+                detail=result.get('error', 'Failed to extract embedding')
             )
 
-        await service._ensure_model_loaded(model_enum)
-        preprocessed_image = service._preprocess_image(image, model_enum)
-        if preprocessed_image is None:
-            raise HTTPException(status_code=500, detail="Image preprocessing failed")
-
-        embedding_obj = service._extract_embedding(preprocessed_image, model_enum)
-
-        if embedding_obj is None or not hasattr(embedding_obj, 'vector'):
-            raise HTTPException(
-                status_code=400, detail="Failed to extract embedding vector"
-            )
-
-        embedding_vector = []
-        if hasattr(embedding_obj, 'vector') and embedding_obj.vector is not None:
-            embedding_vector = embedding_obj.vector.tolist()
-        
-        model_val = model_enum.value
-        if hasattr(embedding_obj, 'model_type') and \
-           embedding_obj.model_type is not None:
-            model_val = embedding_obj.model_type.value
-
-        response_content = {
-            "embedding": embedding_vector,
-            "model_used": model_val,
-        }
-        return JSONResponse(content=response_content)
+        return JSONResponse(content={
+            "success": True,
+            "embedding": result.get('embedding_preview', []),
+            "model_used": result.get('model_used', model_name),
+            "vector": result.get('embedding_preview', [])
+        })
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Embedding extraction failed: {str(e)}", exc_info=True)
-        detail = f"Embedding extraction failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Embedding extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Embedding extraction failed: {str(e)}")
 
 @face_recognition_router.post("/face-recognition/recognize")
 async def recognize_face_endpoint(
     request_data: RecognitionRequest,
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
     """Recognize face against gallery"""
     try:
         image_data = base64.b64decode(request_data.face_image_base64)
         
-        result_dict = await service.recognize_faces(
+        result_dict = await service.recognize_faces_with_gallery(
             image_bytes=image_data,
+            gallery=request_data.gallery,
             model_name=request_data.model_name
         )
+        
         return JSONResponse(content=result_dict)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Recognition failed: {str(e)}", exc_info=True)
-        detail = f"Recognition failed: {str(e)}"
-        raise HTTPException(status_code=500, detail=detail)
-
+        logger.error(f"Recognition failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
 
 @face_recognition_router.post("/face-recognition/add-face")
 async def add_face_to_database(
@@ -298,7 +261,7 @@ async def add_face_to_database(
     person_name: str = Form(...),
     person_id: Optional[str] = Form(None),
     face_image_base64: Optional[str] = Form(None),
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
     """Add face to internal database - supports both file upload and base64"""
     try:
@@ -347,7 +310,7 @@ async def add_face_to_database(
             "message": f"Face added successfully for {person_name}",
             "person_id": person_id,
             "person_name": person_name,
-            "face_id": result.get('face_id'),
+            "face_ids": result.get('face_ids', []),
             "model_used": result.get('model_used'),
             "embedding_preview": result.get('embedding_preview', [])[:5]
         }
@@ -355,17 +318,16 @@ async def add_face_to_database(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error adding face for {person_name}: {e}", exc_info=True)
+        logger.error(f"Error adding face for {person_name}: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
 
-# NEW: JSON API endpoint for bulk operations
 @face_recognition_router.post("/face-recognition/add-face-json")
 async def add_face_json(
-    request: AddFaceJSONRequest, # Uses locally defined AddFaceJSONRequest
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    request: AddFaceJSONRequest,
+    service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
     """Add face to database using JSON request (for bulk operations)"""
     try:
@@ -399,7 +361,7 @@ async def add_face_json(
             "message": f"Face added successfully for {person_name}",
             "person_id": request.person_id,
             "person_name": person_name,
-            "face_id": result.get('face_id'),
+            "face_ids": result.get('face_ids', []),
             "model_used": result.get('model_used'),
             "embedding_preview": result.get('embedding_preview', [])[:5]
         }
@@ -407,9 +369,7 @@ async def add_face_json(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"❌ Error adding face for {request.person_id}: {e}", exc_info=True
-        )
+        logger.error(f"Error adding face for {request.person_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
@@ -417,48 +377,49 @@ async def add_face_json(
 
 @face_recognition_router.get("/face-recognition/get-gallery")
 async def get_gallery_endpoint(
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
     """Retrieve the current face gallery from the service."""
     try:
         database = service.face_database
         gallery_data_transformed: Dict[str, Dict[str, Any]] = {}
+        
         if isinstance(database, dict):
             for person_id, embeddings_list in database.items():
                 if isinstance(embeddings_list, list) and embeddings_list:
                     # Get name from first embedding, default to person_id
-                    person_name = getattr(embeddings_list[0], 'person_name',
-                                          person_id)
+                    person_name = getattr(embeddings_list[0], 'person_name', person_id)
                     
                     embedding_vectors = []
                     for emb_obj in embeddings_list:
-                        if hasattr(emb_obj, 'vector') and \
-                           emb_obj.vector is not None:
+                        if hasattr(emb_obj, 'vector') and emb_obj.vector is not None:
                             embedding_vectors.append(emb_obj.vector.tolist())
                             
                     gallery_data_transformed[person_id] = {
                         "name": person_name,
                         "embeddings": embedding_vectors
                     }
-                elif isinstance(embeddings_list, list) and not embeddings_list:
-                     gallery_data_transformed[person_id] = {
+                elif isinstance(embeddings_list, list):
+                    gallery_data_transformed[person_id] = {
                         "name": person_id,
                         "embeddings": []
                     }
+                    
         return JSONResponse(content=gallery_data_transformed)
+        
     except Exception as e:
-        logger.error(f"Failed to get gallery: {e}", exc_info=True)
+        logger.error(f"Failed to get gallery: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve gallery: {str(e)}"
+            status_code=500, 
+            detail=f"Failed to retrieve gallery: {str(e)}"
         )
 
 @face_recognition_router.get("/face-recognition/database-status")
 async def get_database_status_endpoint(
-    service: FaceRecognitionService = Depends(get_face_recognition_service)
+    service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
     """Get detailed database status for debugging"""
     try:
-        # Access face_database directly from service
         database = service.face_database
 
         status: Dict[str, Any] = {
@@ -483,7 +444,7 @@ async def get_database_status_endpoint(
                     else 0
                 ),
                 "data_type": type(embeddings_data).__name__,
-                "embedding_details": [] # Initialize as list
+                "embedding_details": []
             }
 
             if isinstance(embeddings_data, list):
@@ -510,30 +471,27 @@ async def get_database_status_endpoint(
                         invalid_embeddings += 1
                         emb_detail["error"] = "No vector attribute"
                     
-                    # Ensure embedding_details is a list before appending
-                    if isinstance(person_info["embedding_details"], list):
-                        person_info["embedding_details"].append(emb_detail)
+                    person_info["embedding_details"].append(emb_detail)
 
             status["persons"][person_id] = person_info
         
-        if isinstance(status["summary"], dict):
-            status["summary"]["total_embeddings"] = total_embeddings
-            status["summary"]["valid_embeddings"] = valid_embeddings
-            status["summary"]["invalid_embeddings"] = invalid_embeddings
+        status["summary"]["total_embeddings"] = total_embeddings
+        status["summary"]["valid_embeddings"] = valid_embeddings
+        status["summary"]["invalid_embeddings"] = invalid_embeddings
 
-        logger.info(f"Database status check: {status.get('summary')}")
         return JSONResponse(content=status)
 
     except Exception as e:
-        logger.error(f"Failed to get database status: {e}", exc_info=True)
+        logger.error(f"Failed to get database status: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to get database status: {str(e)}"
+            status_code=500, 
+            detail=f"Failed to get database status: {str(e)}"
         )
 
 # === FACE ANALYSIS API ===
 face_analysis_router = APIRouter()
 
-def get_face_analysis_service(request: Request) -> FaceAnalysisService:
+def get_face_analysis_service(request: Request):
     """Dependency to get face analysis service from app.state"""
     service = getattr(request.app.state, "face_analysis_service", None)
     if service is None:
@@ -541,73 +499,73 @@ def get_face_analysis_service(request: Request) -> FaceAnalysisService:
             status_code=503,
             detail="Face analysis service not available or not initialized properly."
         )
-    return cast(FaceAnalysisService, service)
+    return service
 
-def _parse_analysis_config(
-    request_config: Optional[Union[AnalysisConfig, Dict[str, Any]]],
-    request_mode: Optional[Union[AnalysisMode, str]]
-) -> AnalysisConfig:
-    """Helper function to parse and create AnalysisConfig."""
-    analysis_config_dict = {}
-    if request_config:
-        if isinstance(request_config, AnalysisConfig):
-            # Use to_dict() for dataclass
-            analysis_config_dict = request_config.to_dict()
-        elif isinstance(request_config, dict):
-            analysis_config_dict = request_config
-        else:
-            raise HTTPException(status_code=400,
-                                detail="Invalid config format in request_data")
-
-    if request_mode:
-        if isinstance(request_mode, AnalysisMode):
-            analysis_config_dict['mode'] = request_mode
-        else:
-            try:
-                analysis_config_dict['mode'] = AnalysisMode(request_mode)
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid analysis mode string: {request_mode}"
-                )
-
-    # Also handle quality_level conversion if it's a string
-    if 'quality_level' in analysis_config_dict and isinstance(analysis_config_dict['quality_level'], str):
-        try:
-            from ..ai_services.face_analysis.models import QualityLevel
-            analysis_config_dict['quality_level'] = QualityLevel(analysis_config_dict['quality_level'])
-        except ValueError:
-            # Keep as string if not valid enum
-            pass
-
-    return AnalysisConfig(**analysis_config_dict)
+def create_analysis_config(
+    mode: str = "full_analysis",
+    config_dict: Optional[Dict[str, Any]] = None,
+    detection_model: str = "auto",
+    recognition_model: str = "facenet",
+    confidence_threshold: float = 0.5,
+    max_faces: int = 50
+) -> Dict[str, Any]:
+    """Create analysis config dictionary"""
+    base_config = {
+        "mode": mode,
+        "detection_model": detection_model,
+        "recognition_model": recognition_model,
+        "confidence_threshold": confidence_threshold,
+        "max_faces": max_faces,
+        "enable_gallery_matching": True,
+        "enable_database_matching": True,
+        "quality_level": "balanced",
+        "parallel_processing": True,
+        "return_face_crops": False,
+        "return_embeddings": False,
+        "return_detailed_stats": True
+    }
+    
+    if config_dict:
+        base_config.update(config_dict)
+    
+    return base_config
 
 @face_analysis_router.post("/face-analysis/analyze-json")
 async def analyze_faces_json(
     request_data: FaceAnalysisJSONRequest,
-    service: FaceAnalysisService = Depends(get_face_analysis_service),
+    service = Depends(get_face_analysis_service),
 ) -> JSONResponse:
     """Analyze faces in a base64 encoded image using JSON request"""
     try:
         image = decode_base64_image(request_data.image_base64)
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image format")
-
-        analysis_config = _parse_analysis_config(request_data.config, request_data.mode)
-        gallery_data = request_data.gallery
-
+        
+        # Create analysis config
+        config_dict = create_analysis_config(
+            mode=request_data.mode or "full_analysis",
+            config_dict=request_data.config
+        )
+        
+        # Import AnalysisConfig here to avoid circular imports
+        try:
+            from src.ai_services.face_analysis.models import AnalysisConfig
+            analysis_config = AnalysisConfig(**config_dict)
+        except ImportError:
+            # Fallback: use dict directly
+            analysis_config = config_dict
+        
         result = await service.analyze_faces(
             image=image,
             config=analysis_config,
-            gallery=gallery_data
+            gallery=request_data.gallery
         )
+        
         return JSONResponse(content=result.to_dict())
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"JSON Face analysis failed: {e}", exc_info=True)
+        logger.error(f"JSON Face analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis error: {e}")
-
 
 @face_analysis_router.post("/face-analysis/analyze")
 async def analyze_faces_endpoint(
@@ -615,15 +573,19 @@ async def analyze_faces_endpoint(
     mode: str = Form("full_analysis"),
     gallery_json: Optional[str] = Form(None),
     config_json: Optional[str] = Form(None),
-    service: FaceAnalysisService = Depends(get_face_analysis_service),
+    detection_model: str = Form("auto"),
+    recognition_model: str = Form("facenet"),
+    confidence_threshold: float = Form(0.5),
+    max_faces: int = Form(50),
+    service = Depends(get_face_analysis_service),
 ) -> JSONResponse:
     """Analyze faces in an uploaded image file (form data)"""
     try:
+        # Read and decode image
         image_data = await file.read()
         image = decode_uploaded_image(image_data)
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image format")
 
+        # Parse gallery
         parsed_gallery = None
         if gallery_json:
             try:
@@ -633,54 +595,60 @@ async def analyze_faces_endpoint(
                     status_code=400, detail="Invalid gallery JSON format"
                 )
 
-        parsed_config_dict_from_json = {}
+        # Parse config
+        parsed_config_dict = {}
         if config_json:
             try:
-                parsed_config_dict_from_json = json.loads(config_json)
+                parsed_config_dict = json.loads(config_json)
             except json.JSONDecodeError:
                 raise HTTPException(
                     status_code=400, detail="Invalid config JSON format"
                 )
         
-        # The mode from Form data takes precedence if provided
-        # It will be passed to _parse_analysis_config which handles conversion to Enum
-        # If parsed_config_dict_from_json also contains 'mode', it might be overwritten
-        # by _parse_analysis_config if 'mode' (from Form) is also passed.
-        # Let's ensure 'mode' from Form is correctly prioritized.
+        # Create analysis config
+        config_dict = create_analysis_config(
+            mode=mode,
+            config_dict=parsed_config_dict,
+            detection_model=detection_model,
+            recognition_model=recognition_model,
+            confidence_threshold=confidence_threshold,
+            max_faces=max_faces
+        )
         
-        # Create a base config from JSON string first
-        temp_analysis_config = AnalysisConfig(**parsed_config_dict_from_json)
-        
-        # Then, use _parse_analysis_config, passing the mode from Form data
-        # This allows _parse_analysis_config to correctly set/override the mode
-        analysis_config = _parse_analysis_config(temp_analysis_config, mode)
-
+        # Import AnalysisConfig here to avoid circular imports
+        try:
+            from src.ai_services.face_analysis.models import AnalysisConfig
+            analysis_config = AnalysisConfig(**config_dict)
+        except ImportError:
+            # Fallback: use dict directly
+            analysis_config = config_dict
 
         result = await service.analyze_faces(
             image=image,
             config=analysis_config,
             gallery=parsed_gallery
         )
+        
         return JSONResponse(content=result.to_dict())
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Form-based Face analysis failed: {e}", exc_info=True)
+        logger.error(f"Form-based Face analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis error: {e}")
 
 @face_analysis_router.get("/face-analysis/health")
 async def face_analysis_health(
-    service: FaceAnalysisService = Depends(get_face_analysis_service)
+    service = Depends(get_face_analysis_service)
 ) -> Dict[str, Any]:
     """Health check for face analysis service"""
     try:
-        service_info = service.get_service_info() # No await needed
+        service_info = service.get_service_info()
         return {
             "status": "healthy",
             "service": "face_analysis",
             "service_info": service_info
         }
     except Exception as e:
-        detail = f"Health check failed: {str(e)}"
-        logger.error(detail, exc_info=True)
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Face analysis health check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
