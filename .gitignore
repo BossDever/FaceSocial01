@@ -398,3 +398,11 @@ setup_*.log
 test_run_*.json
 
 # Note: Test files are included in repository for development purposes
+
+# Large report files - keep local but not in git
+*_troubleshooting_report.json
+framework_troubleshooting_report.json
+*_report.json
+framework_*.json
+*.report
+large_reports/
