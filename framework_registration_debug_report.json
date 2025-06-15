@@ -1,0 +1,27 @@
+{
+  "deepface": {
+    "can_load": false,
+    "can_register": false,
+    "registration_result": "HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=30)"
+  },
+  "facenet_pytorch": {
+    "can_load": false,
+    "can_register": false,
+    "registration_result": "HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=30)"
+  },
+  "dlib": {
+    "can_load": false,
+    "can_register": false,
+    "registration_result": "HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=30)"
+  },
+  "insightface": {
+    "can_load": false,
+    "can_register": false,
+    "registration_result": "HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=30)"
+  },
+  "edgeface": {
+    "can_load": false,
+    "can_register": false,
+    "registration_result": "HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=30)"
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "30s": {
+    "deepface": {
+      "success": false,
+      "time": 30,
+      "error": "Timeout"
+    },
+    "facenet_pytorch": {
+      "success": false,
+      "time": 30,
+      "error": "Timeout"
+    },
+    "dlib": {
+      "success": false,
+      "time": 30,
+      "error": "Timeout"
+    },
+    "insightface": {
+      "success": false,
+      "time": 30,
+      "error": "Timeout"
+    },
+    "edgeface": {
+      "success": false,
+      "time": 30,
+      "error": "Timeout"
+    }
+  },
+  "60s": {
+    "deepface": {
+      "success": false,
+      "time": 60,
+      "error": "Timeout"
+    },
+    "facenet_pytorch": {
+      "success": false,
+      "time": 60,
+      "error": "Timeout"
+    },
+    "dlib": {
+      "success": false,
+      "time": 50.752341985702515,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "insightface": {
+      "success": false,
+      "time": 45.331692695617676,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "edgeface": {
+      "success": false,
+      "time": 45.50835704803467,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    }
+  },
+  "120s": {
+    "deepface": {
+      "success": false,
+      "time": 45.27107906341553,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "facenet_pytorch": {
+      "success": false,
+      "time": 45.2980420589447,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "dlib": {
+      "success": false,
+      "time": 45.450329303741455,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "insightface": {
+      "success": false,
+      "time": 45.83399200439453,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    },
+    "edgeface": {
+      "success": false,
+      "time": 46.09671902656555,
+      "error": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":["
+    }
+  }
+}
