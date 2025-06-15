@@ -79,8 +79,7 @@ def test_model_registration_recognition(model_name, base_url="http://localhost:8
             "model_name": model_name,
             "top_k": 3,
             "similarity_threshold": 0.4
-        }
-        
+        }        
         recognize_response = requests.post(
             f"{base_url}/api/face-recognition/recognize",
             json=recognize_data
@@ -88,12 +87,12 @@ def test_model_registration_recognition(model_name, base_url="http://localhost:8
         
         if recognize_response.status_code == 200:
             recognize_result = recognize_response.json()
-            predictions = recognize_result.get('predictions', [])
-            if predictions:
-                best_match = predictions[0]
+            matches = recognize_result.get('matches', recognize_result.get('results', []))
+            if matches:
+                best_match = matches[0]
                 print(f"✅ Recognition successful")
                 print(f"   Matched: {best_match.get('person_name', 'N/A')}")
-                print(f"   Confidence: {best_match.get('confidence', 0):.3f}")
+                print(f"   Confidence: {best_match.get('confidence', best_match.get('similarity', 0)):.3f}")
                 print(f"   Processing time: {recognize_result.get('processing_time', 0):.3f}s")
             else:
                 print(f"⚠️ Recognition returned no matches")
@@ -114,8 +113,7 @@ def test_model_registration_recognition(model_name, base_url="http://localhost:8
             "model_name": model_name,
             "top_k": 3,
             "similarity_threshold": 0.4
-        }
-        
+        }        
         recognize_response_2 = requests.post(
             f"{base_url}/api/face-recognition/recognize",
             json=recognize_data_2
@@ -123,12 +121,12 @@ def test_model_registration_recognition(model_name, base_url="http://localhost:8
         
         if recognize_response_2.status_code == 200:
             recognize_result_2 = recognize_response_2.json()
-            predictions_2 = recognize_result_2.get('predictions', [])
-            if predictions_2:
-                best_match_2 = predictions_2[0]
+            matches_2 = recognize_result_2.get('matches', recognize_result_2.get('results', []))
+            if matches_2:
+                best_match_2 = matches_2[0]
                 print(f"✅ Cross-recognition successful")
                 print(f"   Matched: {best_match_2.get('person_name', 'N/A')}")
-                print(f"   Confidence: {best_match_2.get('confidence', 0):.3f}")
+                print(f"   Confidence: {best_match_2.get('confidence', best_match_2.get('similarity', 0)):.3f}")
                 print(f"   Processing time: {recognize_result_2.get('processing_time', 0):.3f}s")
             else:
                 print(f"⚠️ Cross-recognition returned no matches")

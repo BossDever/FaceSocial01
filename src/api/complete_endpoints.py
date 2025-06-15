@@ -376,25 +376,12 @@ async def recognize_face_endpoint(
             )
         else:
             # Use internal database
-            logger.info(f"🔍 API Debug - Service type: {type(service)}")
-            logger.info(f"🔍 API Debug - Service class: {service.__class__}")
-            logger.info(f"🔍 API Debug - recognize_faces method: {hasattr(service, 'recognize_faces')}")
-            if hasattr(service, 'recognize_faces'):
-                import inspect
-                sig = inspect.signature(service.recognize_faces)
-                logger.info(f"🔍 API Debug - recognize_faces signature: {sig}")
-            
             result_dict = await service.recognize_faces(
                 image_bytes=image_data,
                 model_name=request_data.model_name,
                 top_k=request_data.top_k,
                 similarity_threshold=request_data.similarity_threshold
-            )
-        
-        # Debug: Log the result from service
-        logger.info(f"🔍 API Debug - Recognition result type: {type(result_dict)}")
-        logger.info(f"🔍 API Debug - Recognition result: {result_dict}")
-        
+            )        
         # Ensure result is not None or empty
         if result_dict is None:
             logger.warning("Recognition service returned None result")
@@ -843,3 +830,27 @@ async def face_analysis_health(
     except Exception as e:
         logger.error(f"Face analysis health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+@face_recognition_router.post("/face-recognition/clear-gallery")
+async def clear_gallery_endpoint(
+    service = Depends(get_face_recognition_service)
+) -> JSONResponse:
+    """Clear all faces from the gallery/database"""
+    try:
+        result = await service.clear_gallery()
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Failed to clear gallery: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear gallery: {str(e)}")
+
+@face_recognition_router.get("/face-recognition/gallery-stats")
+async def get_gallery_stats_endpoint(
+    service = Depends(get_face_recognition_service)
+) -> JSONResponse:
+    """Get gallery statistics"""
+    try:
+        stats = await service.get_gallery_stats()
+        return JSONResponse(content=stats)
+    except Exception as e:
+        logger.error(f"Failed to get gallery stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get gallery stats: {str(e)}")

@@ -35,24 +35,30 @@ USERS = {
     "night": [f"night_{i:02d}.jpg" for i in range(1, 11)]
 }
 
-# Model Configuration - ใช้เฉพาะ ONNX models ที่ทำงานได้
-# ONNX models (ทำงานได้ทั้ง registration และ recognition)
+# Model Configuration - ใช้ทั้ง ONNX และ Framework models
+# ONNX models 
 ONNX_MODELS = ["facenet", "adaface", "arcface"]
 
-# Framework models (ไม่ทำงาน - Error 422)
-# FRAMEWORK_MODELS = ["deepface", "facenet_pytorch", "dlib", "insightface", "edgeface"]
+# Framework models (ใช้ได้แล้วหลังจากแก้ไข)
+FRAMEWORK_MODELS = ["deepface", "facenet_pytorch", "dlib", "insightface", "edgeface"]
 
-# ใช้เฉพาะ ONNX models
-ALL_MODELS = ONNX_MODELS
+# ใช้ทั้ง ONNX และ Framework models
+ALL_MODELS = ONNX_MODELS + FRAMEWORK_MODELS
 
-# Ensemble weights (ปรับให้ใช้เฉพาะ ONNX models)
-BASE_ENSEMBLE_WEIGHTS = {
-    "facenet": 0.5,   # 50%
-    "adaface": 0.3,   # 30% 
-    "arcface": 0.2    # 20%
+# Ensemble weights (ปรับให้ใช้ทั้ง ONNX และ Framework models)
+BASE_ENSEMBLE_WEIGHTS = {    # ONNX Models
+    "facenet": 0.20,      # 20%
+    "adaface": 0.15,      # 15%
+    "arcface": 0.15,      # 15%
+    # Framework Models  
+    "deepface": 0.15,     # 15%
+    "facenet_pytorch": 0.15, # 15%
+    "dlib": 0.05,         # 5%
+    "insightface": 0.10,  # 10%
+    "edgeface": 0.05      # 5%
 }
 
-# Ensemble weights (ใช้เฉพาะ ONNX models)
+# Ensemble weights (ใช้ทั้ง ONNX และ Framework models)
 ENSEMBLE_WEIGHTS = BASE_ENSEMBLE_WEIGHTS.copy()
 
 def ensure_output_dir():
@@ -251,99 +257,62 @@ def test_model_availability(model_name: str) -> bool:
         return False
 
 def recognize_face_all_models(image_base64: str, faces: List[Dict] = None) -> Dict[str, Any]:
-    """ทำการจดจำด้วยทุกโมเดล พร้อม face cropping ที่ดีขึ้น"""
+    """ทำการจดจำด้วยทุกโมเดล - ปรับปรุงให้ใช้ internal database แทน external gallery"""
     results = {}
     
-    # ดึง gallery
-    try:
-        gallery_response = requests.get(f"{API_BASE_URL}/api/face-recognition/get-gallery", timeout=30)
-        if gallery_response.status_code != 200:
-            logger.error("❌ Cannot get gallery")
-            return {}
-        gallery = gallery_response.json()
-    except Exception as e:
-        logger.error(f"❌ Gallery error: {e}")
-        return {}
+    # ไม่ต้องดึง gallery เพราะจะใช้ internal database
+    logger.info("    🗄️ Using internal database for recognition (not external gallery)")
     
-    if not gallery:
-        logger.error("❌ Gallery is empty")
-        return {}
-    
-    # เก็บ original image สำหรับใช้กับโมเดลที่ไม่รองรับ cropping
-    original_image_base64 = image_base64
-    cropped_image_base64 = None
-    
-    # สำหรับภาพที่มีหลายใบหน้า: ทำการ crop ใบหน้าหลัก
-    if faces and len(faces) > 1:
-        # คำนวณขนาดใบหน้า
-        face_areas = []
-        for i, face in enumerate(faces):
-            bbox = face.get("bbox", {})
-            width = bbox.get("x2", 0) - bbox.get("x1", 0)
-            height = bbox.get("y2", 0) - bbox.get("y1", 0)
-            area = width * height
-            face_areas.append(area)
-            logger.info(f"    Face {i+1}: {width}x{height} = {area:,} pixels")
-        
-        # หาใบหน้าที่ใหญ่ที่สุด
-        main_face_idx = face_areas.index(max(face_areas))
-        main_face = faces[main_face_idx]
-        logger.info(f"    📏 Multiple faces detected: Using largest face (#{main_face_idx+1}/{len(faces)})")
-        
-        # ลองทำการ crop
-        try:
-            cropped_result = crop_face_from_image(original_image_base64, main_face)
-            if cropped_result and len(cropped_result) > 100:  # ตรวจสอบว่า crop สำเร็จ
-                cropped_image_base64 = cropped_result
-                logger.info(f"    ✂️ Successfully cropped main face for recognition")
-                
-                # ทดสอบคุณภาพของภาพที่ crop
-                try:
-                    import base64
-                    test_decode = base64.b64decode(cropped_image_base64)
-                    if len(test_decode) > 1000:  # ภาพต้องมีขนาดใหญ่พอ
-                        logger.info(f"    ✅ Cropped image quality check passed ({len(test_decode)} bytes)")
-                    else:
-                        logger.warning(f"    ⚠️ Cropped image too small, using original")
-                        cropped_image_base64 = None
-                except Exception as crop_test_e:
-                    logger.warning(f"    ⚠️ Cropped image quality check failed: {crop_test_e}")
-                    cropped_image_base64 = None
-            else:
-                logger.warning(f"    ⚠️ Face cropping failed, using original image")
-        except Exception as e:
-            logger.warning(f"    ⚠️ Face cropping error: {e}, using original image")
-      # ทดสอบทุกโมเดล
+    # ทดสอบทุกโมเดล - ใช้ original image เท่านั้น เพื่อให้ได้ผลลัพธ์ที่แตกต่างกัน
     for model_name in ALL_MODELS:
         try:
-            # เลือกใช้ cropped image สำหรับภาพกลุ่ม หรือ original สำหรับภาพเดี่ยว
-            test_image = cropped_image_base64 if (cropped_image_base64 and len(faces) > 1) else original_image_base64
+            logger.info(f"    🧠 Testing {model_name} with ORIGINAL image")
             
-            if len(faces) > 1 and cropped_image_base64:
-                logger.info(f"    🧠 Testing {model_name} with CROPPED image")
-            else:
-                logger.info(f"    🧠 Testing {model_name} with ORIGINAL image")
-            
-            result = recognize_single_model(test_image, model_name, gallery)
+            # ใช้ internal database แทน external gallery
+            result = recognize_single_model_internal(image_base64, model_name)
             results[model_name] = result
             
             # Log ผลลัพธ์
             if result.get("matches"):
                 best_match = result["matches"][0]
-                similarity = best_match.get("similarity", 0)
-                person_id = best_match.get("person_id", "unknown")
-                logger.info(f"      ✅ {model_name}: {person_id} ({similarity:.3f})")
+                similarity = best_match.get("similarity", best_match.get("confidence", 0))
+                person_name = best_match.get("person_name", "unknown")
+                logger.info(f"      ✅ {model_name}: {person_name} ({similarity:.3f})")
             else:
                 logger.info(f"      ❌ {model_name}: No matches found")
             
             # เพิ่ม delay ระหว่างโมเดล
-            time.sleep(2)
+            time.sleep(1)
                 
         except Exception as e:
             logger.error(f"❌ Recognition failed for {model_name}: {e}")
             results[model_name] = {"matches": [], "error": str(e)}
     
     return results
+
+def recognize_single_model_internal(image_base64: str, model_name: str) -> Dict[str, Any]:
+    """ทำการจดจำด้วยโมเดลเดียวโดยใช้ internal database"""
+    url = f"{API_BASE_URL}/api/face-recognition/recognize"
+    
+    data = {
+        "face_image_base64": image_base64,
+        "model_name": model_name,
+        "top_k": 5,
+        "similarity_threshold": 0.3
+        # ไม่ส่ง gallery เพื่อให้ API ใช้ internal database
+    }
+    
+    try:
+        # เพิ่ม timeout เพื่อให้เวลาในการโหลดโมเดล
+        response = requests.post(url, json=data, timeout=120)        if response.status_code == 200:
+            return response.json()
+        else:
+            error_text = response.text[:200] if response.text else "No error message"
+            logger.error(f"❌ Recognition failed for {model_name}: {response.status_code} - {error_text}")
+            return {"matches": [], "error": f"HTTP {response.status_code}: {error_text}"}
+    except Exception as e:
+        logger.error(f"❌ Recognition exception for {model_name}: {e}")
+        return {"matches": [], "error": str(e)}
 
 def recognize_single_model(image_base64: str, model_name: str, gallery: Dict[str, Any]) -> Dict[str, Any]:
     """ทำการจดจำด้วยโมเดลเดียว - ปรับปรุงการจัดการ error และ timeout"""
