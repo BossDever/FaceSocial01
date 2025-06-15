@@ -396,3 +396,14 @@ Thumbs.db
 start_*.log
 setup_*.log
 test_run_*.json
+
+# Test files and directories - should not be in production
+test_*.py
+*_test.py
+tests/
+test/
+testing/
+*_testing.py
+test_data/
+test_output/
+test_results/
