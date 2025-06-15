@@ -86,7 +86,6 @@ def get_detection_utils():
             BoundingBox,
             FaceDetection,
             DetectionResult,
-            FaceQualityAnalyzer,
             calculate_face_quality,
             validate_bounding_box,
             filter_detection_results,
@@ -94,6 +93,8 @@ def get_detection_utils():
             save_detection_image,
             get_relaxed_face_detection_config
         )
+        from .face_detection_service import FaceQualityAnalyzer
+        
         return {
             'BoundingBox': BoundingBox,
             'FaceDetection': FaceDetection,

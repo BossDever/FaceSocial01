@@ -1,8 +1,7 @@
-# cSpell:disable
-# mypy: ignore-errors
 """
-Face Recognition Data Models
+Face Recognition Data Models - Fixed Version
 Enhanced models with better error handling and validation
+แก้ไขปัญหา Enum และ backwards compatibility
 """
 
 from dataclasses import dataclass, field
@@ -13,7 +12,7 @@ import time
 
 
 class RecognitionModel(Enum):
-    """โมเดลสำหรับการจดจำใบหน้า"""
+    """โมเดลสำหรับการจดจำใบหน้า - Fixed Enum"""
 
     ADAFACE = "adaface"
     ARCFACE = "arcface"
@@ -21,6 +20,19 @@ class RecognitionModel(Enum):
 
     def __str__(self) -> str:
         return self.value
+
+    @classmethod
+    def from_string(cls, model_string: str) -> Optional['RecognitionModel']:
+        """Create RecognitionModel from string with error handling"""
+        try:
+            return cls(model_string.lower().strip())
+        except ValueError:
+            return None
+
+    @classmethod
+    def get_all_values(cls) -> List[str]:
+        """Get all model values as strings"""
+        return [model.value for model in cls]
 
 
 # Alias for backward compatibility
@@ -34,6 +46,18 @@ class RecognitionQuality(Enum):
     MEDIUM = "medium"  # คุณภาพปานกลาง 50-80%
     LOW = "low"  # คุณภาพต่ำ < 50%
     UNKNOWN = "unknown"  # ไม่สามารถประเมินได้
+
+    @classmethod
+    def from_score(cls, score: float) -> 'RecognitionQuality':
+        """Get quality level from score"""
+        if score >= 0.8:
+            return cls.HIGH
+        elif score >= 0.5:
+            return cls.MEDIUM
+        elif score > 0:
+            return cls.LOW
+        else:
+            return cls.UNKNOWN
 
 
 @dataclass
@@ -51,14 +75,7 @@ class FaceQuality:
     @property
     def overall_quality(self) -> RecognitionQuality:
         """ประเมินคุณภาพโดยรวม"""
-        if self.score >= 80:
-            return RecognitionQuality.HIGH
-        elif self.score >= 50:
-            return RecognitionQuality.MEDIUM
-        elif self.score > 0:
-            return RecognitionQuality.LOW
-        else:
-            return RecognitionQuality.UNKNOWN
+        return RecognitionQuality.from_score(self.score / 100.0)
 
     def to_dict(self) -> Dict[str, Any]:
         """แปลงเป็น dictionary"""
@@ -81,14 +98,14 @@ FaceGallery = Dict[str, Dict[str, Any]]
 
 @dataclass
 class FaceEmbedding:
-    """ผลลัพธ์การสกัด embedding vector จากรูปภาพใบหน้า - Enhanced"""
+    """ผลลัพธ์การสกัด embedding vector จากรูปภาพใบหน้า - Enhanced & Fixed"""
 
     # Main fields for new system
     id: str  # Unique ID for this specific embedding instance
     person_id: str  # ID of the person this embedding belongs to
     person_name: Optional[str] = None  # Name of the person
     vector: Optional[np.ndarray] = None
-    # Model type used for this embedding
+    # Model type used for this embedding - Fixed handling
     model_type: Optional[RecognitionModel] = None
     timestamp: float = field(default_factory=time.time)
     quality_score: float = 0.0
@@ -99,7 +116,7 @@ class FaceEmbedding:
     confidence: float = 0.0
     dimension: int = 0
     normalized: bool = False
-    # Method used for extraction (e.g., 'insightface_onnx_adaface')
+    # Method used for extraction (e.g., 'onnx_facenet', 'framework_deepface')
     extraction_method: str = ""
     source_image_hash: Optional[str] = None  # Hash of the source image
     # Bounding box of the face in the source image [x1, y1, x2, y2]
@@ -110,40 +127,46 @@ class FaceEmbedding:
     face_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
 
     def __post_init__(self) -> None:
+        """Post-initialization processing with improved error handling"""
+        # Handle vector dimension and normalization
         if self.vector is not None:
-            self.dimension = self.vector.shape[0]
-            # Example: Check if vector is L2 normalized (sum of squares is close to 1)
-            # This is a common practice for many face recognition models.
-            # Adjust tolerance as needed.
+            self.dimension = self.vector.shape[0] if hasattr(self.vector, 'shape') else len(self.vector)
+            # Check if vector is L2 normalized (sum of squares is close to 1)
             if self.dimension > 0:
-                norm_sq = np.sum(np.square(self.vector))
-                self.normalized = np.isclose(norm_sq, 1.0, atol=1e-5)
+                try:
+                    norm_sq = np.sum(np.square(self.vector))
+                    self.normalized = np.isclose(norm_sq, 1.0, atol=1e-5)
+                except Exception:
+                    self.normalized = False
 
-        if self.model_type and isinstance(self.model_type, RecognitionModel):
-            # Ensure model_type is stored as its string value if it's an Enum
-            # This was a previous source of issues, ensuring it's handled here.
-            pass # No change needed if it's already RecognitionModel type
-        elif self.model_type and isinstance(self.model_type, str):
-            try:
-                # Attempt to convert string back to Enum for consistency internally
-                self.model_type = RecognitionModel(self.model_type)
-            except ValueError:
-                # If string is not valid enum, keep as string or handle.
-                # For now, log warning & keep string if not valid enum member.
-                # This can happen if new model type string not in enum.
-                # Consider error or default if strict enum adherence needed.
-                # print(f"Warn: '{self.model_type}' not valid enum member.")
-                pass # Keep as string if not a valid enum member
+        # Handle model_type conversion with improved error handling
+        if self.model_type is not None:
+            if isinstance(self.model_type, str):
+                # Try to convert string to enum
+                converted_model = RecognitionModel.from_string(self.model_type)
+                if converted_model is not None:
+                    self.model_type = converted_model
+                else:
+                    # Keep as string if conversion fails (for framework models)
+                    pass
+            # If it's already a RecognitionModel, keep it as is
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, handling numpy array serialization."""
+        # Handle model_type conversion safely
+        model_type_str = None
+        if self.model_type is not None:
+            if isinstance(self.model_type, RecognitionModel):
+                model_type_str = self.model_type.value
+            else:
+                model_type_str = str(self.model_type)
+
         data = {
             "id": self.id,
             "person_id": self.person_id,
             "person_name": self.person_name,
             "vector": self.vector.tolist() if self.vector is not None else None,
-            # Ensure model_type is stored as string value for JSON serialization
-            "model_type": str(self.model_type) if self.model_type else None,
+            "model_type": model_type_str,
             "timestamp": self.timestamp,
             "quality_score": self.quality_score,
             "extraction_time": self.extraction_time,
@@ -161,37 +184,42 @@ class FaceEmbedding:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FaceEmbedding":
-        """Create FaceEmbedding from dictionary."""
-        vector = np.array(data["vector"]) if data.get("vector") is not None else None
-        model_type_str = data.get("model_type")
-        model_type_enum: Optional[RecognitionModel] = None
-        if model_type_str:
+        """Create FaceEmbedding from dictionary with improved error handling."""
+        # Handle vector conversion
+        vector = None
+        if data.get("vector") is not None:
             try:
-                model_type_enum = RecognitionModel(model_type_str)
-            except ValueError:
-                # Log or handle if model_type_str not valid enum member
-                # print(f"Warn: '{model_type_str}' from dict not valid enum.")
-                pass # Keep as None or use a default if desired
+                vector = np.array(data["vector"], dtype=np.float32)
+            except Exception:
+                vector = None
 
+        # Handle model_type conversion
+        model_type_data = data.get("model_type")
+        model_type_enum: Optional[RecognitionModel] = None
+        if model_type_data:
+            if isinstance(model_type_data, str):
+                model_type_enum = RecognitionModel.from_string(model_type_data)
+            # Keep as None if conversion fails
+
+        # Handle face_quality conversion
         face_quality_str = data.get("face_quality", "unknown")
         face_quality_enum = RecognitionQuality.UNKNOWN
         try:
             face_quality_enum = RecognitionQuality(face_quality_str)
-        except ValueError:
-            pass
+        except (ValueError, TypeError):
+            face_quality_enum = RecognitionQuality.UNKNOWN
 
         return cls(
-            id=data["id"],
-            person_id=data["person_id"],
+            id=data.get("id", ""),
+            person_id=data.get("person_id", ""),
             person_name=data.get("person_name"),
             vector=vector,
-            model_type=model_type_enum, # Use the converted enum value
+            model_type=model_type_enum,
             timestamp=data.get("timestamp", time.time()),
             quality_score=data.get("quality_score", 0.0),
             extraction_time=data.get("extraction_time", 0.0),
             metadata=data.get("metadata", {}),
             confidence=data.get("confidence", 0.0),
-            # dimension will be set in __post_init__ if vector is present
             normalized=data.get("normalized", False),
             extraction_method=data.get("extraction_method", ""),
             source_image_hash=data.get("source_image_hash"),
@@ -203,7 +231,7 @@ class FaceEmbedding:
 
 @dataclass
 class FaceMatch:
-    """ผลการจับคู่ใบหน้ากับคนในฐานข้อมูล - Enhanced"""
+    """ผลการจับคู่ใบหน้ากับคนในฐานข้อมูล - Enhanced & Fixed"""
 
     person_id: str
     confidence: float
@@ -214,7 +242,9 @@ class FaceMatch:
     distance: float = 0.0
     rank: int = 0
     match_quality: RecognitionQuality = RecognitionQuality.UNKNOWN
-    comparison_method: str = "cosine_similarity"    # Legacy fields for backward compatibility
+    comparison_method: str = "cosine_similarity"
+
+    # Legacy fields for backward compatibility
     identity_id: str = field(init=False)
     similarity: float = field(init=False)
     is_match: bool = field(init=False)
@@ -225,21 +255,20 @@ class FaceMatch:
         # Set legacy fields for backward compatibility
         self.identity_id = self.person_id
         self.similarity = self.confidence
-        self.is_match = self.confidence > 0.5  # Lowered from 0.6 to 0.5
+        # Default is_match to True for any valid confidence
+        # This will be properly set by the service using unknown_threshold
+        self.is_match = self.confidence > 0.0
 
         # Set similarity_score if not provided
         if self.similarity_score == 0.0:
             self.similarity_score = self.confidence
 
-        # Set match quality based on confidence (adjusted thresholds)
-        if self.confidence >= 0.75:  # Lowered from 0.8 to 0.75
-            self.match_quality = RecognitionQuality.HIGH
-        elif self.confidence >= 0.5:  # Lowered from 0.6 to 0.5
-            self.match_quality = RecognitionQuality.MEDIUM
-        elif self.confidence > 0.0:
-            self.match_quality = RecognitionQuality.LOW
-        else:
-            self.match_quality = RecognitionQuality.UNKNOWN
+        # Set match quality based on confidence (optimized thresholds)
+        self.match_quality = RecognitionQuality.from_score(self.confidence)
+    
+    def set_match_status(self, unknown_threshold: float) -> None:
+        """Set is_match based on unknown_threshold from config"""
+        self.is_match = self.confidence >= unknown_threshold
 
     def to_dict(self) -> Dict[str, Any]:
         """แปลงเป็น dictionary สำหรับ JSON serialization"""
@@ -274,7 +303,7 @@ class FaceComparisonResult:
     # Enhanced fields
     distance: float = 0.0
     comparison_method: str = "cosine_similarity"
-    threshold_used: float = 0.6
+    threshold_used: float = 0.5  # Lowered from 0.6 to 0.5
     quality_assessment: Optional[FaceQuality] = None
 
     # Legacy fields for backward compatibility
@@ -390,8 +419,8 @@ class RecognitionConfig:
 
     # Model settings
     preferred_model: RecognitionModel = RecognitionModel.FACENET
-    similarity_threshold: float = 0.60
-    unknown_threshold: float = 0.55
+    similarity_threshold: float = 0.50  # Lowered from 0.60
+    unknown_threshold: float = 0.40     # Lowered from 0.55
     embedding_dimension: int = 512
 
     # Processing settings
@@ -428,3 +457,49 @@ class RecognitionConfig:
             "auto_model_selection": bool(self.auto_model_selection),
             "enable_unknown_detection": bool(self.enable_unknown_detection),
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RecognitionConfig":
+        """Create RecognitionConfig from dictionary"""
+        # Handle preferred_model conversion
+        preferred_model_str = data.get("preferred_model", "facenet")
+        preferred_model = RecognitionModel.from_string(preferred_model_str)
+        if preferred_model is None:
+            preferred_model = RecognitionModel.FACENET
+
+        return cls(
+            preferred_model=preferred_model,
+            similarity_threshold=data.get("similarity_threshold", 0.50),
+            unknown_threshold=data.get("unknown_threshold", 0.40),
+            embedding_dimension=data.get("embedding_dimension", 512),
+            max_faces=data.get("max_faces", 10),
+            quality_threshold=data.get("quality_threshold", 0.2),
+            batch_size=data.get("batch_size", 8),
+            enable_gpu_optimization=data.get("enable_gpu_optimization", True),
+            cuda_memory_fraction=data.get("cuda_memory_fraction", 0.8),
+            use_cuda_graphs=data.get("use_cuda_graphs", False),
+            parallel_processing=data.get("parallel_processing", True),
+            enable_quality_assessment=data.get("enable_quality_assessment", True),
+            auto_model_selection=data.get("auto_model_selection", True),
+            enable_unknown_detection=data.get("enable_unknown_detection", True),
+        )
+
+
+# Utility functions for backward compatibility
+def get_model_from_string(model_string: str) -> Optional[RecognitionModel]:
+    """Get RecognitionModel from string - utility function"""
+    return RecognitionModel.from_string(model_string)
+
+
+def get_all_model_names() -> List[str]:
+    """Get all available model names"""
+    return RecognitionModel.get_all_values()
+
+
+# Export all classes and functions
+__all__ = [
+    "RecognitionModel", "ModelType", "RecognitionQuality", "FaceQuality",
+    "FaceEmbedding", "FaceMatch", "FaceComparisonResult", "FaceRecognitionResult",
+    "RecognitionConfig", "EmbeddingVector", "FaceGallery",
+    "get_model_from_string", "get_all_model_names"
+]

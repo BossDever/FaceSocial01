@@ -97,9 +97,7 @@ class Settings:
         },
         "filter_min_quality": 30.0,
         "filter_min_quality_final": 40.0,
-    })
-
-    # Face Recognition Service Configuration
+    })    # Face Recognition Service Configuration
     recognition_config: Dict[str, Any] = field(default_factory=lambda: {
         "preferred_model": "facenet",
         "similarity_threshold": 0.60,
@@ -114,6 +112,9 @@ class Settings:
         "enable_quality_assessment": True,
         "auto_model_selection": True,
         "enable_unknown_detection": True,
+        "enable_multi_framework": True,
+        "frameworks": ["deepface", "facenet_pytorch", "dlib", "insightface", "edgeface"],
+        "models_path": "./model/face-recognition/"
     })
 
     # Face Analysis Service Configuration

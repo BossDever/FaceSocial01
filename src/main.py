@@ -30,6 +30,12 @@ def setup_logging() -> None:
             logging.FileHandler("logs/app.log")
         ]
     )
+    
+    # Silence watchfiles and related loggers
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchdog").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Initialize logging
 setup_logging()
@@ -60,7 +66,17 @@ try:
         face_detection_router,
         face_recognition_router,
         face_analysis_router,
-    )
+    )    # Import enhanced API routers (with fallback)
+    try:
+        from src.api.face_recognition import router as face_recognition_enhanced_router
+        from src.api.face_detection import router as face_detection_enhanced_router
+        from src.api.face_analysis import router as face_analysis_enhanced_router
+    except ImportError as router_error:
+        logger.warning(f"Enhanced routers import failed: {router_error}")
+        # Use fallback routers from complete_endpoints
+        face_recognition_enhanced_router = face_recognition_router
+        face_detection_enhanced_router = face_detection_router
+        face_analysis_enhanced_router = face_analysis_router
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print(f"Current working directory: {os.getcwd()}")
@@ -306,6 +322,11 @@ app.include_router(face_detection_router, prefix="/api", tags=["Face Detection"]
 app.include_router(face_recognition_router, prefix="/api", tags=["Face Recognition"])
 app.include_router(face_analysis_router, prefix="/api", tags=["Face Analysis"])
 
+# Include enhanced API routers
+app.include_router(face_recognition_enhanced_router, prefix="/api/face-recognition", tags=["Face Recognition Enhanced"])
+app.include_router(face_detection_enhanced_router, prefix="/api/face-detection", tags=["Face Detection Enhanced"])
+app.include_router(face_analysis_enhanced_router, prefix="/api/face-analysis", tags=["Face Analysis Enhanced"])
+
 @app.get("/", include_in_schema=False)
 async def root_redirect() -> RedirectResponse:
     """Redirect root to documentation"""
@@ -324,17 +345,28 @@ async def health_check(request: Request) -> Dict[str, Any]:
         service_instance = getattr(request.app.state, service_key, None)
         if service_instance and hasattr(service_instance, 'get_service_info'):
             try:
-                # Check if get_service_info is async or sync
+                # ตรวจสอบว่าเป็น async method หรือไม่
                 import inspect
                 if inspect.iscoroutinefunction(service_instance.get_service_info):
                     info = await service_instance.get_service_info()
                 else:
                     info = service_instance.get_service_info()
-                service_statuses[service_key] = {
-                    "status": "healthy",
-                    "details": info
-                }
-                active_services += 1
+                
+                # ตรวจสอบว่า info เป็น dict หรือไม่
+                if isinstance(info, dict):
+                    service_statuses[service_key] = {
+                        "status": "healthy",
+                        "details": info
+                    }
+                    active_services += 1
+                else:
+                    service_statuses[service_key] = {
+                        "status": "warning",
+                        "details": {"raw_response": str(info)},
+                        "message": "Service returned non-dict response"
+                    }
+                    active_services += 1
+                    
             except Exception as e:
                 logger.error(f"Error getting info for {service_key}: {e}")
                 service_statuses[service_key] = {
@@ -359,6 +391,7 @@ async def health_check(request: Request) -> Dict[str, Any]:
                 "details": vram_status
             }
         except Exception as e:
+            logger.error(f"Error getting VRAM status: {e}")
             service_statuses[VRAM_MANAGER_SERVICE] = {
                 "status": "unhealthy",
                 "error": str(e)

@@ -552,4 +552,7 @@ async def batch_analyze_faces(
         raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
 
 # Export routers
-__all__ = ["face_detection_router", "face_recognition_router", "face_analysis_router"]
+__all__ = ["face_detection_router", "face_recognition_router", "face_analysis_router", "router"]
+
+# Main router for backward compatibility
+router = face_analysis_router

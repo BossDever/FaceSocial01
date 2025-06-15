@@ -262,7 +262,7 @@ class FaceAnalysisService:
     async def analyze_faces(
         self,
         image: np.ndarray,
-        config: AnalysisConfig,
+        config: Union[AnalysisConfig, Dict[str, Any]],  # รองรับทั้ง object และ dict
         gallery: Optional[Dict[str, Any]] = None,
     ) -> FaceAnalysisResult:
         """
@@ -270,7 +270,7 @@ class FaceAnalysisService:
 
         Args:
             image: รูปภาพ (BGR format)
-            config: การตั้งค่าการวิเคราะห์
+            config: การตั้งค่าการวิเคราะห์ (AnalysisConfig object หรือ dict)
             gallery: ฐานข้อมูลใบหน้าสำหรับจดจำ
 
         Returns:
@@ -282,41 +282,73 @@ class FaceAnalysisService:
         faces: List[FaceResult] = []
         detection_model_used = None
         recognition_model_used = None
-        gallery_actually_used = False
+        gallery_actually_used = False        # Declare current_config here to ensure it's always defined
+        current_config: AnalysisConfig
 
         try:
+            # แปลง config เป็น AnalysisConfig object ถ้าเป็น dict
+            if isinstance(config, dict):
+                try:
+                    # สร้างสำเนาของ config เพื่อไม่ให้แก้ไข original
+                    config_copy = config.copy()
+                    
+                    # แปลง string เป็น enum
+                    if isinstance(config_copy.get("mode"), str):
+                        try:
+                            config_copy["mode"] = AnalysisMode(config_copy["mode"])
+                        except ValueError:
+                            config_copy["mode"] = AnalysisMode.FULL_ANALYSIS
+                    
+                    if isinstance(config_copy.get("quality_level"), str):
+                        try:
+                            config_copy["quality_level"] = QualityLevel(config_copy["quality_level"])
+                        except ValueError:
+                            config_copy["quality_level"] = QualityLevel.BALANCED
+                    
+                    current_config = AnalysisConfig(**config_copy)
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to convert dict to AnalysisConfig: {e}")
+                    # สร้าง default AnalysisConfig
+                    current_config = AnalysisConfig()
+            elif isinstance(config, AnalysisConfig):
+                current_config = config
+            else:
+                self.logger.error(f"Invalid config type: {type(config)}. Using default.")
+                current_config = AnalysisConfig()
+
             # Step 1: Face Detection
-            if config.mode in [
+            if current_config.mode in [
                 AnalysisMode.DETECTION_ONLY,
                 AnalysisMode.FULL_ANALYSIS,
                 AnalysisMode.COMPREHENSIVE,
             ]:
                 faces, detection_time, detection_model_used = (
-                    await self._handle_detection(image, config)
+                    await self._handle_detection(image, current_config)
                 )
 
             # Step 2: Face Recognition (modified to pass gallery)
             if (
-                config.mode in [AnalysisMode.FULL_ANALYSIS, AnalysisMode.COMPREHENSIVE]
+                current_config.mode in [AnalysisMode.FULL_ANALYSIS, AnalysisMode.COMPREHENSIVE]
                 and faces # Only proceed if faces were detected
             ):
-                if gallery and config.enable_gallery_matching:
+                if gallery and current_config.enable_gallery_matching:
                     self.logger.info(
                         f"Starting recognition for {len(faces)} faces with provided gallery ({len(gallery)} people)."
                     )
                     gallery_actually_used = True
                     recognition_time_val, recognition_model_used_rec = await self._handle_recognition(
-                        image, faces, config, gallery
+                        image, faces, current_config, gallery
                     )
                     recognition_time += recognition_time_val
                     if recognition_model_used_rec:
                         recognition_model_used = recognition_model_used_rec
-                elif config.enable_database_matching:
+                elif current_config.enable_database_matching:
                     self.logger.info(
                         f"Starting recognition for {len(faces)} faces with internal database."
                     )
                     recognition_time_val, recognition_model_used_rec = await self._handle_recognition(
-                        image, faces, config, None
+                        image, faces, current_config, None
                     )
                     recognition_time += recognition_time_val
                     if recognition_model_used_rec:
@@ -325,20 +357,20 @@ class FaceAnalysisService:
                     self.logger.info("Recognition skipped: Gallery not provided/enabled, and DB matching not enabled.")
 
             # Step 3: Handle recognition-only mode (modified to pass gallery)
-            elif config.mode == AnalysisMode.RECOGNITION_ONLY:
-                if gallery and config.enable_gallery_matching:
+            elif current_config.mode == AnalysisMode.RECOGNITION_ONLY:
+                if gallery and current_config.enable_gallery_matching:
                     self.logger.info(f"Processing recognition-only mode with provided gallery ({len(gallery)} people).")
                     gallery_actually_used = True
                     faces, rec_time, rec_model = await self._handle_recognition_only(
-                        image, config, gallery
+                        image, current_config, gallery
                     )
                     recognition_time += rec_time
                     if rec_model:
                         recognition_model_used = rec_model
-                elif config.enable_database_matching:
+                elif current_config.enable_database_matching:
                     self.logger.info("Processing recognition-only mode with internal database.")
                     faces, rec_time, rec_model = await self._handle_recognition_only(
-                        image, config, None
+                        image, current_config, None
                     )
                     recognition_time += rec_time
                     if rec_model:
@@ -351,7 +383,7 @@ class FaceAnalysisService:
             # สร้างผลลัพธ์
             result = FaceAnalysisResult(
                 image_shape=image.shape,
-                config=config,
+                config=current_config,
                 faces=faces,
                 detection_time=detection_time,
                 recognition_time=recognition_time,
@@ -359,12 +391,12 @@ class FaceAnalysisService:
                 detection_model_used=detection_model_used,
                 recognition_model_used=recognition_model_used,
                 analysis_metadata={
-                    "quality_level": config.quality_level.value if hasattr(config.quality_level, 'value') else str(config.quality_level),
-                    "parallel_processing": config.parallel_processing,
+                    "quality_level": current_config.quality_level.value if hasattr(current_config.quality_level, 'value') else str(current_config.quality_level),
+                    "parallel_processing": current_config.parallel_processing,
                     "gallery_size": len(gallery) if gallery else 0,
                     "gallery_provided": gallery is not None,
                     "gallery_used_for_matching": gallery_actually_used,
-                    "database_used_for_matching": config.enable_database_matching and not gallery_actually_used,
+                    "database_used_for_matching": current_config.enable_database_matching and not gallery_actually_used,
                 },
             )
 
@@ -382,10 +414,13 @@ class FaceAnalysisService:
             total_time = time.time() - start_time
             self.logger.error(f"❌ Face analysis failed: {e}")
 
+            # Ensure config is an AnalysisConfig object for the error result
+            error_config = current_config if 'current_config' in locals() and isinstance(current_config, AnalysisConfig) else AnalysisConfig()
+
             # Return error result
             return FaceAnalysisResult(
                 image_shape=image.shape,
-                config=config,
+                config=error_config, # Use the ensured AnalysisConfig object
                 faces=[],
                 detection_time=detection_time,
                 recognition_time=recognition_time,
@@ -566,13 +601,31 @@ class FaceAnalysisService:
                     f"❌ Recognition service did not return a dict for face {face_result.face_id}. "
                     f"Got: {type(recognition_result_dict)}"
                 )
-                recognition_result_dict = {}
-
-            # Update FaceResult with recognition details
+                recognition_result_dict = {}            # Update FaceResult with recognition details
             face_result.query_embedding = recognition_result_dict.get("query_embedding")
             face_result.matches = recognition_result_dict.get("matches", [])
             face_result.best_match = recognition_result_dict.get("best_match")
             face_result.recognition_model = config.recognition_model
+              # Apply unknown_threshold to best_match
+            if face_result.best_match and hasattr(face_result.best_match, 'set_match_status'):
+                logger.debug(f"Face {face_result.face_id}: Applying unknown_threshold {config.unknown_threshold} to FaceMatch object")
+                face_result.best_match.set_match_status(config.unknown_threshold)
+                logger.debug(f"Face {face_result.face_id}: is_match = {face_result.best_match.is_match}")
+            elif face_result.best_match and isinstance(face_result.best_match, dict):
+                # For dict-based best_match, create a proper FaceMatch object
+                logger.debug(f"Face {face_result.face_id}: Converting dict best_match to FaceMatch object")
+                from ..face_recognition.models import FaceMatch
+                similarity = face_result.best_match.get('similarity', 0.0)
+                face_match = FaceMatch(
+                    person_id=face_result.best_match.get('person_id', ''),
+                    confidence=similarity,
+                    person_name=face_result.best_match.get('name', face_result.best_match.get('person_id', ''))
+                )
+                face_match.set_match_status(config.unknown_threshold)
+                logger.debug(f"Face {face_result.face_id}: Created FaceMatch with similarity {similarity}, is_match = {face_match.is_match}")
+                face_result.best_match = face_match
+            else:
+                logger.debug(f"Face {face_result.face_id}: No best_match to process")
             
             # Times from recognition service are for its own operations
             face_result.recognition_time = recognition_result_dict.get("processing_time", 0.0)
@@ -732,19 +785,21 @@ class FaceAnalysisService:
         detection_info = {}
         if self.face_detection_service:
             if hasattr(self.face_detection_service, 'get_service_info'):
-                import inspect
-                if inspect.iscoroutinefunction(self.face_detection_service.get_service_info):
-                    detection_info = {"async_method": "get_service_info available but async"}
-                else:
-                    try:
+                try:
+                    # ตรวจสอบว่าเป็น async method หรือไม่
+                    import inspect
+                    if inspect.iscoroutinefunction(self.face_detection_service.get_service_info):
+                        detection_info = {"async_method": "get_service_info available but async - call with await"}
+                    else:
                         detection_info = self.face_detection_service.get_service_info()
-                    except Exception as e:
-                        detection_info = {"error": str(e)}
+                except Exception as e:
+                    detection_info = {"error": str(e)}
 
         recognition_info = {}
         if self.face_recognition_service:
             if hasattr(self.face_recognition_service, 'get_service_info'):
                 try:
+                    # get_service_info ใน FaceRecognitionService ไม่ได้เป็น async
                     recognition_info = self.face_recognition_service.get_service_info()
                 except Exception as e:
                     recognition_info = {"error": str(e)}

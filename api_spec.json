@@ -1,0 +1,901 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Face Recognition API",
+    "description": "API for face detection, recognition, and analysis.",
+    "version": "1.1.0"
+  },
+  "paths": {
+    "/api/face-detection/health": {
+      "get": {
+        "tags": [
+          "Face Detection"
+        ],
+        "summary": "Face Detection Health",
+        "description": "Health check for face detection service",
+        "operationId": "face_detection_health_api_face_detection_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Face Detection Health Api Face Detection Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-detection/detect": {
+      "post": {
+        "tags": [
+          "Face Detection"
+        ],
+        "summary": "Detect Faces Endpoint",
+        "description": "Detect faces in uploaded image",
+        "operationId": "detect_faces_endpoint_api_face_detection_detect_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_detect_faces_endpoint_api_face_detection_detect_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-detection/detect-base64": {
+      "post": {
+        "tags": [
+          "Face Detection"
+        ],
+        "summary": "Detect Faces Base64",
+        "description": "Detect faces in base64 encoded image",
+        "operationId": "detect_faces_base64_api_face_detection_detect_base64_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/health": {
+      "get": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Face Recognition Health",
+        "description": "Health check for face recognition service",
+        "operationId": "face_recognition_health_api_face_recognition_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Face Recognition Health Api Face Recognition Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/extract-embedding": {
+      "post": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Extract Embedding Endpoint",
+        "description": "Extract face embedding from uploaded image",
+        "operationId": "extract_embedding_endpoint_api_face_recognition_extract_embedding_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_extract_embedding_endpoint_api_face_recognition_extract_embedding_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/recognize": {
+      "post": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Recognize Face Endpoint",
+        "description": "Recognize face against gallery",
+        "operationId": "recognize_face_endpoint_api_face_recognition_recognize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecognitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/add-face": {
+      "post": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Add Face To Database",
+        "description": "Add face to internal database - supports both file upload and base64",
+        "operationId": "add_face_to_database_api_face_recognition_add_face_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_face_to_database_api_face_recognition_add_face_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Add Face To Database Api Face Recognition Add Face Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/add-face-json": {
+      "post": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Add Face Json",
+        "description": "Add face to database using JSON request (for bulk operations)",
+        "operationId": "add_face_json_api_face_recognition_add_face_json_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddFaceJSONRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Add Face Json Api Face Recognition Add Face Json Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/get-gallery": {
+      "get": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Get Gallery Endpoint",
+        "description": "Retrieve the current face gallery from the service.",
+        "operationId": "get_gallery_endpoint_api_face_recognition_get_gallery_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-recognition/database-status": {
+      "get": {
+        "tags": [
+          "Face Recognition"
+        ],
+        "summary": "Get Database Status Endpoint",
+        "description": "Get detailed database status for debugging",
+        "operationId": "get_database_status_endpoint_api_face_recognition_database_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-analysis/analyze-json": {
+      "post": {
+        "tags": [
+          "Face Analysis"
+        ],
+        "summary": "Analyze Faces Json",
+        "description": "Analyze faces in a base64 encoded image using JSON request",
+        "operationId": "analyze_faces_json_api_face_analysis_analyze_json_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FaceAnalysisJSONRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-analysis/analyze": {
+      "post": {
+        "tags": [
+          "Face Analysis"
+        ],
+        "summary": "Analyze Faces Endpoint",
+        "description": "Analyze faces in an uploaded image file (form data)",
+        "operationId": "analyze_faces_endpoint_api_face_analysis_analyze_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_faces_endpoint_api_face_analysis_analyze_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/face-analysis/health": {
+      "get": {
+        "tags": [
+          "Face Analysis"
+        ],
+        "summary": "Face Analysis Health",
+        "description": "Health check for face analysis service",
+        "operationId": "face_analysis_health_api_face_analysis_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Face Analysis Health Api Face Analysis Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "description": "Perform a health check of the system and its services.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Check Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddFaceJSONRequest": {
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "title": "Person Id"
+          },
+          "person_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Name"
+          },
+          "face_image_base64": {
+            "type": "string",
+            "title": "Face Image Base64"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name",
+            "default": "facenet"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "person_id",
+          "face_image_base64"
+        ],
+        "title": "AddFaceJSONRequest"
+      },
+      "Body_add_face_to_database_api_face_recognition_add_face_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "person_name": {
+            "type": "string",
+            "title": "Person Name"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
+          },
+          "face_image_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Face Image Base64"
+          }
+        },
+        "type": "object",
+        "required": [
+          "person_name"
+        ],
+        "title": "Body_add_face_to_database_api_face_recognition_add_face_post"
+      },
+      "Body_analyze_faces_endpoint_api_face_analysis_analyze_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "full_analysis"
+          },
+          "gallery_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gallery Json"
+          },
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json"
+          },
+          "detection_model": {
+            "type": "string",
+            "title": "Detection Model",
+            "default": "auto"
+          },
+          "recognition_model": {
+            "type": "string",
+            "title": "Recognition Model",
+            "default": "facenet"
+          },
+          "confidence_threshold": {
+            "type": "number",
+            "title": "Confidence Threshold",
+            "default": 0.5
+          },
+          "max_faces": {
+            "type": "integer",
+            "title": "Max Faces",
+            "default": 50
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_analyze_faces_endpoint_api_face_analysis_analyze_post"
+      },
+      "Body_detect_faces_endpoint_api_face_detection_detect_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "default": "auto"
+          },
+          "conf_threshold": {
+            "type": "number",
+            "title": "Conf Threshold",
+            "default": 0.5
+          },
+          "iou_threshold": {
+            "type": "number",
+            "title": "Iou Threshold",
+            "default": 0.4
+          },
+          "max_faces": {
+            "type": "integer",
+            "title": "Max Faces",
+            "default": 50
+          },
+          "min_quality_threshold": {
+            "type": "number",
+            "title": "Min Quality Threshold",
+            "default": 40.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_detect_faces_endpoint_api_face_detection_detect_post"
+      },
+      "Body_extract_embedding_endpoint_api_face_recognition_extract_embedding_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "default": "facenet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_extract_embedding_endpoint_api_face_recognition_extract_embedding_post"
+      },
+      "DetectionRequest": {
+        "properties": {
+          "image_base64": {
+            "type": "string",
+            "title": "Image Base64"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name",
+            "default": "auto"
+          },
+          "conf_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conf Threshold",
+            "default": 0.5
+          },
+          "iou_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iou Threshold",
+            "default": 0.4
+          },
+          "max_faces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Faces",
+            "default": 50
+          },
+          "min_quality_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Quality Threshold",
+            "default": 40.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_base64"
+        ],
+        "title": "DetectionRequest"
+      },
+      "FaceAnalysisJSONRequest": {
+        "properties": {
+          "image_base64": {
+            "type": "string",
+            "title": "Image Base64"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode",
+            "default": "full_analysis"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "gallery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gallery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_base64"
+        ],
+        "title": "FaceAnalysisJSONRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RecognitionRequest": {
+        "properties": {
+          "face_image_base64": {
+            "type": "string",
+            "title": "Face Image Base64"
+          },
+          "gallery": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Gallery"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name",
+            "default": "facenet"
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "face_image_base64",
+          "gallery"
+        ],
+        "title": "RecognitionRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

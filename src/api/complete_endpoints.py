@@ -26,9 +26,10 @@ class DetectionRequest(BaseModel):
 
 class RecognitionRequest(BaseModel):
     face_image_base64: str
-    gallery: Dict[str, Any]
+    gallery: Optional[Dict[str, Any]] = None
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
+    similarity_threshold: Optional[float] = 0.5
 
 class AddFaceJSONRequest(BaseModel):
     person_id: str
@@ -44,6 +45,18 @@ class FaceAnalysisJSONRequest(BaseModel):
     gallery: Optional[Dict[str, Any]] = None
 
 # === UTILITY FUNCTIONS ===
+def decode_uploaded_image(image_data: bytes) -> np.ndarray:
+    """Decode uploaded image file to an OpenCV image"""
+    try:
+        image_array = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Failed to decode image")
+        return image
+    except Exception as e:
+        logger.error(f"Failed to decode uploaded image: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+
 def decode_base64_image(image_base64: str) -> np.ndarray:
     """Decode a base64 encoded image to an OpenCV image"""
     try:
@@ -55,18 +68,6 @@ def decode_base64_image(image_base64: str) -> np.ndarray:
         return image
     except Exception as e:
         logger.error(f"Failed to decode base64 image: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
-
-def decode_uploaded_image(image_data: bytes) -> np.ndarray:
-    """Decode uploaded image file to an OpenCV image"""
-    try:
-        image_array = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-        if image is None:
-            raise ValueError("Failed to decode image")
-        return image
-    except Exception as e:
-        logger.error(f"Failed to decode uploaded image: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
 
 # === FACE DETECTION API ===
@@ -160,6 +161,56 @@ async def detect_faces_base64(
         logger.error(f"Face detection failed: {e}")
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
+@face_detection_router.get("/face-detection/models/available")
+async def get_available_models(
+    service = Depends(get_face_detection_service)
+) -> Dict[str, Any]:
+    """Get list of available detection models"""
+    try:
+        service_info = await service.get_service_info()
+        model_info = service_info.get("model_info", {})
+        
+        available_models = []
+        for model_name, info in model_info.items():
+            if isinstance(info, dict) and info.get("model_loaded", False):
+                available_models.append({
+                    "name": model_name,
+                    "loaded": info.get("model_loaded", False),
+                    "device": info.get("device", "unknown"),
+                    "performance": info.get("performance_stats", {})
+                })
+        
+        return {
+            "available_models": available_models,
+            "total_models": len(available_models),
+            "supported_formats": ["jpg", "jpeg", "png", "bmp", "tiff", "webp"],
+            "max_image_size": "No limit (memory dependent)",
+            "recommended_models": {
+                "fastest": "yolov9c",
+                "balanced": "yolov9e", 
+                "most_accurate": "yolov11m"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get available models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get models: {str(e)}")
+
+@face_detection_router.get("/face-detection/performance")
+async def get_detection_performance(
+    service = Depends(get_face_detection_service)
+) -> Dict[str, Any]:
+    """Get detection performance statistics"""
+    try:
+        service_info = await service.get_service_info()
+        return {
+            "performance_stats": service_info.get("performance_stats", {}),
+            "model_info": service_info.get("model_info", {}),
+            "vram_status": service_info.get("vram_status", {})
+        }
+    except Exception as e:
+        logger.error(f"Failed to get performance stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get performance: {str(e)}")
+
 # === FACE RECOGNITION API ===
 face_recognition_router = APIRouter()
 
@@ -189,6 +240,72 @@ async def face_recognition_health(
         logger.error(f"Face recognition health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
+@face_recognition_router.get("/face-recognition/models/available")
+async def get_available_recognition_models(
+    service = Depends(get_face_recognition_service)
+) -> Dict[str, Any]:
+    """Get list of available recognition models"""
+    try:
+        service_info = service.get_service_info()
+        
+        # Debug: Log service configuration
+        logger.info(f"🔍 API Debug - Service instance: {id(service)}")
+        logger.info(f"🔍 API Debug - Multi-framework enabled: {getattr(service, 'enable_multi_framework', False)}")
+        logger.info(f"🔍 API Debug - Requested frameworks: {getattr(service, 'requested_frameworks', [])}")
+        
+        # Get available frameworks from the service
+        try:
+            available_frameworks = service.get_available_frameworks()
+            logger.info(f"🔍 API Debug - Available frameworks returned: {available_frameworks}")
+        except Exception as e:
+            logger.error(f"🔍 API Debug - Framework detection failed: {e}")
+            # Fallback to ONNX models if framework detection fails
+            available_frameworks = ["facenet", "adaface", "arcface"]
+        
+        # Format models with more details
+        available_models = []
+        for model_name in available_frameworks:            available_models.append({
+                "name": model_name,
+                "loaded": model_name in ["facenet", "adaface", "arcface"],  # ONNX models are pre-loaded
+                "type": "onnx" if model_name in ["facenet", "adaface", "arcface"] else "framework",
+                "device": "gpu",
+                "embedding_size": 512 if model_name != "dlib" else 128,
+            })
+        
+        return {
+            "available_models": available_models,
+            "available_frameworks": available_frameworks,
+            "total_models": len(available_frameworks),
+            "onnx_models": ["facenet", "adaface", "arcface"],
+            "framework_models": [m for m in available_frameworks if m not in ["facenet", "adaface", "arcface"]],
+            "multi_framework_enabled": getattr(service, 'enable_multi_framework', False),
+            "supported_formats": ["jpg", "jpeg", "png", "bmp", "tiff", "webp"],
+            "recommended_models": {
+                "fastest": "facenet",
+                "balanced": "adaface", 
+                "most_accurate": "arcface"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get available recognition models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get models: {str(e)}")
+
+@face_recognition_router.get("/face-recognition/performance")
+async def get_recognition_performance(
+    service = Depends(get_face_recognition_service)
+) -> Dict[str, Any]:
+    """Get recognition performance statistics"""
+    try:
+        service_info = service.get_service_info()
+        return {
+            "performance_stats": service_info.get("performance_stats", {}),
+            "model_info": service_info.get("model_info", {}),
+            "database_stats": service_info.get("database_info", {})
+        }
+    except Exception as e:
+        logger.error(f"Failed to get recognition performance: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get performance: {str(e)}")
+
 @face_recognition_router.post("/face-recognition/extract-embedding")
 async def extract_embedding_endpoint(
     file: UploadFile = File(...),
@@ -217,13 +334,21 @@ async def extract_embedding_endpoint(
             raise HTTPException(
                 status_code=400, 
                 detail=result.get('error', 'Failed to extract embedding')
-            )
-
+            )        # ใช้ full_embedding เป็นหลัก แทนที่จะใช้ embedding_preview
+        full_embedding = result.get("full_embedding", [])
+        embedding_preview = result.get("embedding_preview", [])
+        
+        # ถ้าไม่มี full_embedding ให้ fallback ไป embedding_preview
+        final_embedding = full_embedding if len(full_embedding) > len(embedding_preview) else embedding_preview
+        
         return JSONResponse(content={
             "success": True,
-            "embedding": result.get('embedding_preview', []),
+            "embedding": final_embedding,
             "model_used": result.get('model_used', model_name),
-            "vector": result.get('embedding_preview', [])
+            "vector": final_embedding,
+            "dimension": len(final_embedding),
+            "full_embedding": full_embedding,
+            "embedding_preview": embedding_preview[:5] if embedding_preview else []
         })
 
     except HTTPException:
@@ -237,15 +362,56 @@ async def recognize_face_endpoint(
     request_data: RecognitionRequest,
     service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
-    """Recognize face against gallery"""
+    """Recognize face against gallery or internal database"""
     try:
         image_data = base64.b64decode(request_data.face_image_base64)
         
-        result_dict = await service.recognize_faces_with_gallery(
-            image_bytes=image_data,
-            gallery=request_data.gallery,
-            model_name=request_data.model_name
-        )
+        # Check if gallery is provided
+        if request_data.gallery and len(request_data.gallery) > 0:
+            # Use external gallery
+            result_dict = await service.recognize_faces_with_gallery(
+                image_bytes=image_data,
+                gallery=request_data.gallery,
+                model_name=request_data.model_name
+            )
+        else:
+            # Use internal database
+            logger.info(f"🔍 API Debug - Service type: {type(service)}")
+            logger.info(f"🔍 API Debug - Service class: {service.__class__}")
+            logger.info(f"🔍 API Debug - recognize_faces method: {hasattr(service, 'recognize_faces')}")
+            if hasattr(service, 'recognize_faces'):
+                import inspect
+                sig = inspect.signature(service.recognize_faces)
+                logger.info(f"🔍 API Debug - recognize_faces signature: {sig}")
+            
+            result_dict = await service.recognize_faces(
+                image_bytes=image_data,
+                model_name=request_data.model_name,
+                top_k=request_data.top_k,
+                similarity_threshold=request_data.similarity_threshold
+            )
+        
+        # Debug: Log the result from service
+        logger.info(f"🔍 API Debug - Recognition result type: {type(result_dict)}")
+        logger.info(f"🔍 API Debug - Recognition result: {result_dict}")
+        
+        # Ensure result is not None or empty
+        if result_dict is None:
+            logger.warning("Recognition service returned None result")
+            result_dict = {
+                "success": False,
+                "matches": [],
+                "total_matches": 0,
+                "message": "No recognition result returned"
+            }
+        elif not isinstance(result_dict, dict):
+            logger.warning(f"Recognition service returned unexpected type: {type(result_dict)}")
+            result_dict = {
+                "success": False,
+                "matches": [],
+                "total_matches": 0,
+                "message": f"Unexpected result type: {type(result_dict)}"
+            }
         
         return JSONResponse(content=result_dict)
 
@@ -518,11 +684,16 @@ def create_analysis_config(
         "max_faces": max_faces,
         "enable_gallery_matching": True,
         "enable_database_matching": True,
-        "quality_level": "balanced",
+        "quality_level": "balanced",  # ใช้ string แทน enum
         "parallel_processing": True,
         "return_face_crops": False,
         "return_embeddings": False,
-        "return_detailed_stats": True
+        "return_detailed_stats": True,
+        "min_face_size": 32,
+        "gallery_top_k": 5,
+        "batch_size": 8,
+        "use_quality_based_selection": True,
+        "recognition_image_format": "jpg"
     }
     
     if config_dict:
@@ -545,12 +716,32 @@ async def analyze_faces_json(
             config_dict=request_data.config
         )
         
-        # Import AnalysisConfig here to avoid circular imports
+        # สร้าง AnalysisConfig object อย่างปลอดภัย
         try:
-            from src.ai_services.face_analysis.models import AnalysisConfig
+            from src.ai_services.face_analysis.models import AnalysisConfig, AnalysisMode, QualityLevel
+            
+            # แปลง string เป็น enum ก่อนสร้าง object
+            if isinstance(config_dict.get("mode"), str):
+                try:
+                    config_dict["mode"] = AnalysisMode(config_dict["mode"])
+                except ValueError:
+                    config_dict["mode"] = AnalysisMode.FULL_ANALYSIS
+            
+            if isinstance(config_dict.get("quality_level"), str):
+                try:
+                    config_dict["quality_level"] = QualityLevel(config_dict["quality_level"])
+                except ValueError:
+                    config_dict["quality_level"] = QualityLevel.BALANCED
+            
             analysis_config = AnalysisConfig(**config_dict)
+            
         except ImportError:
             # Fallback: use dict directly
+            logger.warning("Could not import AnalysisConfig, using dict fallback")
+            analysis_config = config_dict
+        except Exception as e:
+            logger.error(f"Error creating AnalysisConfig: {e}")
+            # Use dict as fallback
             analysis_config = config_dict
         
         result = await service.analyze_faces(

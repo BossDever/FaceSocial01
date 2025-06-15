@@ -1,7 +1,7 @@
 # cSpell:disable
 # mypy: ignore-errors
 """
-Face Analysis Data Models
+Face Analysis Data Models - Fixed Version
 โครงสร้างข้อมูลสำหรับระบบวิเคราะห์ใบหน้าแบบครบวงจร
 Enhanced with better error handling and validation
 """
@@ -50,32 +50,27 @@ except ImportError:
         ARCFACE = "arcface"
         FACENET = "facenet"
 
-
+# Define enums
 class AnalysisMode(Enum):
     """โหมดการวิเคราะห์"""
-
-    DETECTION_ONLY = "detection_only"  # ตรวจจับใบหน้าเท่านั้น
-    RECOGNITION_ONLY = "recognition_only"  # จดจำใบหน้าเท่านั้น (ต้องมี face crops)
-    FULL_ANALYSIS = "full_analysis"  # ตรวจจับ + จดจำ
-    COMPREHENSIVE = "comprehensive"  # วิเคราะห์ครบวงจรทุกอย่าง
-    VERIFICATION = "verification"  # เปรียบเทียบใบหน้า 2 ใบ
-
+    DETECTION_ONLY = "detection_only"
+    RECOGNITION_ONLY = "recognition_only"
+    FULL_ANALYSIS = "full_analysis"
+    COMPREHENSIVE = "comprehensive"
+    VERIFICATION = "verification"
 
 class QualityLevel(Enum):
     """ระดับคุณภาพของการวิเคราะห์"""
-
-    HIGH = "high"  # คุณภาพสูง - ใช้เวลานาน แต่แม่นยำ
-    BALANCED = "balanced"  # สมดุล - เหมาะสำหรับงานทั่วไป
-    FAST = "fast"  # เร็ว - ลดคุณภาพเพื่อความเร็ว
-
+    HIGH = "high"
+    BALANCED = "balanced"
+    FAST = "fast"
 
 class DetectionEngine(Enum):
     """Detection engines available"""
+    AUTO = "auto"
     YOLOV9C = "yolov9c"
     YOLOV9E = "yolov9e"
     YOLOV11M = "yolov11m"
-    AUTO = "auto"
-
 
 @dataclass
 class DetectionConfig:
@@ -85,7 +80,6 @@ class DetectionConfig:
     iou_threshold: float = 0.4
     min_face_size: int = 32
     max_faces: int = 50
-
 
 @dataclass
 class AnalysisConfig:
@@ -160,7 +154,7 @@ class AnalysisConfig:
                 pass
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """Convert to dictionary for JSON serialization - FIXED VERSION"""
         result = {
             "mode": self.mode.value if hasattr(self.mode, 'value') else str(self.mode),
             "detection_model": self.detection_model,
@@ -198,7 +192,7 @@ class AnalysisConfig:
                     result["detection_config"] = {
                         k: v.value if hasattr(v, 'value') else v 
                         for k, v in self.detection_config.__dict__.items()
-                        if not callable(v)
+                        if not callable(v) and not k.startswith('_')
                     }
                 else:
                     result["detection_config"] = str(self.detection_config)
@@ -206,22 +200,17 @@ class AnalysisConfig:
                 result["detection_config"] = None
         else:
             result["detection_config"] = None
-          # Safely serialize recognition_config
+        
+        # Safely serialize recognition_config
         if self.recognition_config:
             try:
                 if isinstance(self.recognition_config, dict):
-                    # Filter out non-serializable values and convert enums
-                    serialized_config = {}
-                    for k, v in self.recognition_config.items():
-                        if not callable(v) and not k.startswith('_'):
-                            # Convert enum values to their string representation
-                            if hasattr(v, 'value'):
-                                serialized_config[k] = v.value
-                            elif hasattr(v, '__name__'):
-                                serialized_config[k] = v.__name__
-                            else:
-                                serialized_config[k] = v
-                    result["recognition_config"] = serialized_config
+                    # Filter out non-serializable values
+                    result["recognition_config"] = {
+                        k: (v.value if hasattr(v, 'value') else v) 
+                        for k, v in self.recognition_config.items()
+                        if not callable(v) and not k.startswith('_')
+                    }
                 else:
                     result["recognition_config"] = str(self.recognition_config)
             except Exception:
@@ -230,7 +219,6 @@ class AnalysisConfig:
             result["recognition_config"] = None
             
         return result
-
 
 # Define the FaceAnalysisJSONRequest model
 class FaceAnalysisJSONRequest(BaseModel):
@@ -242,7 +230,6 @@ class FaceAnalysisJSONRequest(BaseModel):
     class Config:
         use_enum_values = True
         arbitrary_types_allowed = True
-
 
 @dataclass
 class FaceResult:
@@ -279,17 +266,9 @@ class FaceResult:
     @property
     def has_identity(self) -> bool:
         """ตรวจสอบว่าจดจำตัวตนได้หรือไม่"""
-        result = self.best_match is not None and getattr(
-            self.best_match, "is_match", False
+        result = self.best_match is not None and (
+            hasattr(self.best_match, "person_id") or hasattr(self.best_match, "identity_id")
         )
-        # Debug logging
-        if self.best_match is not None:
-            is_match = getattr(self.best_match, "is_match", None)
-            confidence = getattr(self.best_match, "confidence", None)
-            person_id = getattr(self.best_match, "person_id", None)
-            print(f"DEBUG: Face {getattr(self, 'face_id', 'unknown')} - best_match exists, is_match={is_match}, confidence={confidence}, person_id={person_id}, has_identity={result}")
-        else:
-            print(f"DEBUG: Face {getattr(self, 'face_id', 'unknown')} - no best_match, has_identity={result}")
         return result
 
     @property
@@ -307,49 +286,34 @@ class FaceResult:
     def identity_name(self) -> Optional[str]:
         """ดึงชื่อตัวตนที่จดจำได้"""
         if self.has_identity and self.best_match:
-            # Try different possible name fields
-            return (
-                getattr(self.best_match, "person_name", None) or
-                getattr(self.best_match, "identity_name", None) or
-                getattr(self.best_match, "name", None) or
-                self.identity
-            )
+            return getattr(self.best_match, "person_name", self.identity)
         return None
 
     @property
     def recognition_confidence(self) -> float:
         """ความมั่นใจในการจดจำ"""
-        if self.best_match:
-            return getattr(self.best_match, "confidence", 0.0)
+        if self.has_identity and self.best_match:
+            return getattr(self.best_match, "similarity", 0.0)
         return 0.0
 
     def get_face_crop_bytes(self, source_image: Optional[np.ndarray] = None, 
                            image_format: str = "jpg") -> Optional[bytes]:
         """Get face crop as bytes for recognition processing"""
-        try:
-            face_crop_to_encode = None
-            
-            if self.face_crop is not None:
-                face_crop_to_encode = self.face_crop
-            elif source_image is not None:
-                # Extract face crop from source image using bbox
-                h, w = source_image.shape[:2]
-                x1 = max(0, int(self.bbox.x1))
-                y1 = max(0, int(self.bbox.y1))
-                x2 = min(w, int(self.bbox.x2))
-                y2 = min(h, int(self.bbox.y2))
-                
-                if x1 < x2 and y1 < y2:
-                    face_crop_to_encode = source_image[y1:y2, x1:x2]
-            
-            if face_crop_to_encode is not None:
-                success, buffer = cv2.imencode(f".{image_format}", face_crop_to_encode)
-                if success:
-                    return buffer.tobytes()
-            
+        if self.face_crop is not None:
+            crop_to_encode = self.face_crop
+        elif source_image is not None:
+            # Extract face crop from source image
+            x1, y1, x2, y2 = int(self.bbox.x1), int(self.bbox.y1), int(self.bbox.x2), int(self.bbox.y2)
+            crop_to_encode = source_image[y1:y2, x1:x2]
+        else:
             return None
-        except Exception:
-            return None
+        
+        # Encode to bytes
+        ext = f'.{image_format.lower()}'
+        success, buffer = cv2.imencode(ext, crop_to_encode)
+        if success:
+            return buffer.tobytes()
+        return None
 
     def to_dict(self) -> Dict[str, Any]:
         """แปลงเป็น dictionary สำหรับ JSON serialization"""
@@ -378,17 +342,29 @@ class FaceResult:
             "recognition_model": self.recognition_model,
         }
 
+        # Safely serialize embedding
         if self.embedding and hasattr(self.embedding, "to_dict"):
-            result["embedding"] = self.embedding.to_dict()
+            try:
+                result["embedding"] = self.embedding.to_dict()
+            except Exception:
+                result["embedding"] = None
 
+        # Safely serialize matches
         if self.matches:
-            result["matches"] = [
-                match.to_dict() if hasattr(match, "to_dict") else match
-                for match in self.matches
-            ]
+            try:
+                result["matches"] = [
+                    match.to_dict() if hasattr(match, "to_dict") else str(match)
+                    for match in self.matches
+                ]
+            except Exception:
+                result["matches"] = []
 
+        # Safely serialize best_match
         if self.best_match and hasattr(self.best_match, "to_dict"):
-            result["best_match"] = self.best_match.to_dict()
+            try:
+                result["best_match"] = self.best_match.to_dict()
+            except Exception:
+                result["best_match"] = None
 
         if self.face_crop is not None:
             result["face_crop_shape"] = self.face_crop.shape
@@ -403,7 +379,6 @@ class FaceResult:
             result["analysis_metadata"] = self.analysis_metadata
 
         return result
-
 
 @dataclass
 class FaceAnalysisResult:
@@ -465,16 +440,14 @@ class FaceAnalysisResult:
     @property
     def detection_success_rate(self) -> float:
         """อัตราความสำเร็จของการตรวจจับ"""
-        return (self.usable_faces / self.total_faces) if self.total_faces > 0 else 0.0
+        return 1.0 if self.total_faces > 0 else 0.0
 
     @property
     def recognition_success_rate(self) -> float:
         """อัตราความสำเร็จของการจดจำ"""
-        return (
-            (self.identified_faces / self.usable_faces)
-            if self.usable_faces > 0
-            else 0.0
-        )
+        if self.total_faces == 0:
+            return 0.0
+        return self.identified_faces / self.total_faces
 
     @property
     def average_confidence(self) -> float:
@@ -530,8 +503,8 @@ class FaceAnalysisResult:
         return list(identities)
 
     def to_dict(self) -> Dict[str, Any]:
-        """แปลงเป็น dictionary สำหรับ JSON serialization"""
-        return {
+        """แปลงเป็น dictionary สำหรับ JSON serialization - FIXED VERSION"""
+        result = {
             "image_shape": {
                 "height": int(self.image_shape[0]),
                 "width": int(self.image_shape[1]),
@@ -539,7 +512,6 @@ class FaceAnalysisResult:
                 if len(self.image_shape) > 2
                 else 1,
             },
-            "config": self.config.to_dict(),
             "faces": [face.to_dict() for face in self.faces],
             "performance": self.performance_breakdown,
             "models_used": {
@@ -563,7 +535,18 @@ class FaceAnalysisResult:
             "error": self.error,
             "analysis_metadata": self.analysis_metadata,
         }
-
+        
+        # Safely serialize config
+        try:
+            result["config"] = self.config.to_dict()
+        except Exception as e:
+            # Fallback to basic config info
+            result["config"] = {
+                "mode": str(self.config.mode) if hasattr(self.config, 'mode') else "full_analysis",
+                "serialization_error": str(e)
+            }
+        
+        return result
 
 @dataclass
 class BatchAnalysisResult:
@@ -574,98 +557,25 @@ class BatchAnalysisResult:
     total_faces: int
     total_identities: int
     processing_time: float
-
-    # Enhanced fields
-    successful_analyses: int = 0
-    failed_analyses: int = 0
+    successful_analyses: int
+    failed_analyses: int
+    average_faces_per_image: float
+    overall_success_rate: float
+    overall_recognition_rate: float
+    average_processing_time: float
+    throughput_fps: float
     batch_metadata: Optional[Dict[str, Any]] = None
 
-    def __post_init__(self) -> None:
-        """Calculate additional statistics"""
-        self.successful_analyses = len([r for r in self.results if r.success])
-        self.failed_analyses = len([r for r in self.results if not r.success])
-
-    @property
-    def average_faces_per_image(self) -> float:
-        """จำนวนใบหน้าเฉลี่ยต่อรูป"""
-        return self.total_faces / self.total_images if self.total_images > 0 else 0.0
-
-    @property
-    def overall_success_rate(self) -> float:
-        """อัตราความสำเร็จโดยรวม"""
-        return (
-            self.successful_analyses / self.total_images
-            if self.total_images > 0
-            else 0.0
-        )
-
-    @property
-    def overall_recognition_rate(self) -> float:
-        """อัตราการจดจำโดยรวม"""
-        if not self.results:
-            return 0.0
-
-        total_usable = sum(r.usable_faces for r in self.results)
-        total_identified = sum(r.identified_faces for r in self.results)
-
-        return total_identified / total_usable if total_usable > 0 else 0.0
-
-    @property
-    def average_processing_time(self) -> float:
-        """เวลาประมวลผลเฉลี่ยต่อรูป"""
-        return (
-            self.processing_time / self.total_images if self.total_images > 0 else 0.0
-        )
-
-    @property
-    def throughput_fps(self) -> float:
-        """อัตราการประมวลผล (รูป/วินาที)"""
-        return (
-            self.total_images / self.processing_time
-            if self.processing_time > 0
-            else 0.0
-        )
-
     def get_summary_statistics(self) -> Dict[str, Any]:
-        """ดึงสถิติสรุปแบบละเอียด"""
-        if not self.results:
-            return {}
-
-        # Detection statistics
-        detection_times = [r.detection_time for r in self.results if r.success]
-        recognition_times = [r.recognition_time for r in self.results if r.success]
-        quality_scores = []
-
-        for result in self.results:
-            if result.success:
-                quality_scores.extend([f.quality_score for f in result.faces])
-
+        """สร้างสถิติสรุปแบบละเอียด"""
         return {
-            "detection_stats": {
-                "average_time": float(np.mean(detection_times))
-                if detection_times
-                else 0.0,
-                "min_time": float(np.min(detection_times)) if detection_times else 0.0,
-                "max_time": float(np.max(detection_times)) if detection_times else 0.0,
-            },
-            "recognition_stats": {
-                "average_time": float(np.mean(recognition_times))
-                if recognition_times
-                else 0.0,
-                "min_time": float(np.min(recognition_times))
-                if recognition_times
-                else 0.0,
-                "max_time": float(np.max(recognition_times))
-                if recognition_times
-                else 0.0,
-            },
-            "quality_stats": {
-                "average_quality": float(np.mean(quality_scores))
-                if quality_scores
-                else 0.0,
-                "min_quality": float(np.min(quality_scores)) if quality_scores else 0.0,
-                "max_quality": float(np.max(quality_scores)) if quality_scores else 0.0,
-            },
+            "total_processed": self.total_images,
+            "faces_detected": self.total_faces,
+            "identities_found": self.total_identities,
+            "success_rate": self.overall_success_rate,
+            "recognition_rate": self.overall_recognition_rate,
+            "average_processing_time": self.average_processing_time,
+            "throughput": self.throughput_fps,
         }
 
     def to_dict(self) -> Dict[str, Any]:

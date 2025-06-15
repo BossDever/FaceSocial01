@@ -397,13 +397,11 @@ start_*.log
 setup_*.log
 test_run_*.json
 
-# Test files and directories - should not be in production
-test_*.py
-*_test.py
-tests/
-test/
-testing/
-*_testing.py
-test_data/
-test_output/
-test_results/
+# Note: Test files are included in repository for development purposes
+
+# Large report files - keep local but not in git
+*_troubleshooting_report.json
+*_report.json
+framework_*.json
+*.report
+large_reports/

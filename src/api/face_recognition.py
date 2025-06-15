@@ -1,6 +1,6 @@
 """
-Face Recognition API Router
-Fixed version with proper dependency injection and comprehensive endpoints
+Face Recognition API Router - Fixed Version
+แก้ไขปัญหาการเรียกใช้ method และ handling ของ embedding extraction
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
@@ -31,7 +31,7 @@ class RecognitionRequest(BaseModel):
     gallery: Optional[Dict[str, Any]] = None
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
-    similarity_threshold: Optional[float] = 0.5  # Lowered from 0.6 to 0.5
+    similarity_threshold: Optional[float] = 0.5
 
 class EmbeddingRequest(BaseModel):
     face_image_base64: str
@@ -94,7 +94,15 @@ def validate_image_format(file: UploadFile) -> bool:
 
 def validate_model_name(model_name: str) -> str:
     """Validate and normalize model name"""
-    valid_models = {"facenet", "adaface", "arcface"}
+    # ONNX Models (primary)
+    onnx_models = {"facenet", "adaface", "arcface"}
+    
+    # Framework Models (secondary)
+    framework_models = {"deepface", "facenet_pytorch", "dlib", "insightface", "edgeface"}
+    
+    # All valid models
+    valid_models = onnx_models | framework_models
+    
     model_name = model_name.lower().strip()
     
     if model_name not in valid_models:
@@ -141,18 +149,9 @@ async def health_check(
             "service": "face_recognition",
             "service_info": service_info,
             "endpoints": [
-                "/health",
-                "/add-face",
-                "/add-face-json",
-                "/extract-embedding",
-                "/recognize",
-                "/compare",
-                "/gallery/get",
-                "/gallery/set",
-                "/gallery/clear",
-                "/database/status",
-                "/models/available",
-                "/performance/stats"
+                "/health", "/add-face", "/add-face-json", "/extract-embedding",
+                "/recognize", "/compare", "/gallery/get", "/gallery/set",
+                "/gallery/clear", "/database/status", "/models/available", "/performance/stats"
             ]
         }
     except Exception as e:
@@ -167,15 +166,7 @@ async def add_face_endpoint(
     model_name: str = Form("facenet"),
     service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
-    """
-    Add a face to the recognition database using file upload
-    
-    Parameters:
-    - person_name: Name of the person
-    - person_id: Unique ID for the person (optional, will use person_name if not provided)
-    - file: Image file containing the face
-    - model_name: Recognition model to use
-    """
+    """Add a face to the recognition database using file upload"""
     try:
         # Validate inputs
         model_name = validate_model_name(model_name)
@@ -228,25 +219,14 @@ async def add_face_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error in add_face_endpoint: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/add-face-json")
 async def add_face_json_endpoint(
     request: AddFaceRequest,
     service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
-    """
-    Add a face to the recognition database using JSON request
-    
-    Body:
-    - person_name: Name of the person
-    - person_id: Unique ID for the person (optional)
-    - face_image_base64: Base64 encoded image
-    - model_name: Recognition model to use
-    - metadata: Optional metadata
-    """
+    """Add a face to the recognition database using JSON request"""
     try:
         # Validate inputs
         model_name = validate_model_name(request.model_name or "facenet")
@@ -299,9 +279,7 @@ async def add_face_json_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error in add_face_json_endpoint: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/extract-embedding")
 async def extract_embedding_endpoint(
@@ -310,14 +288,7 @@ async def extract_embedding_endpoint(
     normalize: bool = Form(True),
     service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
-    """
-    Extract face embedding from uploaded image
-    
-    Parameters:
-    - file: Image file containing the face
-    - model_name: Recognition model to use
-    - normalize: Whether to normalize the embedding vector
-    """
+    """Extract face embedding from uploaded image - Fixed Version"""
     try:
         # Validate inputs
         model_name = validate_model_name(model_name)
@@ -336,28 +307,56 @@ async def extract_embedding_endpoint(
 
         logger.info(f"Extracting embedding from {file.filename} using {model_name}")
 
-        # Extract embedding using a temporary face addition
-        result = await service.add_face_from_image(
-            image_bytes=image_bytes,
-            person_name="temp_extraction",
-            person_id="temp_extraction",
-            model_name=model_name
-        )
-
-        if not result or not result.get("success"):
-            error_detail = (
-                result.get("error", "Failed to extract embedding")
-                if result
-                else "Failed to extract embedding"
+        # แก้ไข: ใช้ method ที่เหมาะสมสำหรับ embedding extraction
+        try:
+            # ใช้ method extract_embedding_only แทน add_face_from_image
+            embedding_result = await service.extract_embedding_only(
+                image_bytes=image_bytes,
+                model_name=model_name,
+                normalize=normalize
             )
-            raise HTTPException(status_code=400, detail=error_detail)
+        except AttributeError:
+            # Fallback: ถ้าไม่มี method extract_embedding_only ให้ใช้วิธีเดิมแต่แก้ไข
+            temp_result = await service.add_face_from_image(
+                image_bytes=image_bytes,
+                person_name="temp_extraction",
+                person_id="temp_extraction",
+                model_name=model_name
+            )
+            
+            if not temp_result or not temp_result.get("success"):
+                error_detail = (
+                    temp_result.get("error", "Failed to extract embedding")
+                    if temp_result
+                    else "Failed to extract embedding"
+                )
+                raise HTTPException(status_code=400, detail=error_detail)
+            
+            # แปลงผลลัพธ์ให้เป็นรูปแบบที่ต้องการ
+            full_embedding = temp_result.get("full_embedding", [])
+            embedding_preview = temp_result.get("embedding_preview", [])
+            
+            embedding_result = {
+                "success": True,
+                "embedding": full_embedding if full_embedding else embedding_preview,
+                "full_embedding": full_embedding,
+                "embedding_preview": embedding_preview[:5] if embedding_preview else [],
+                "model_used": temp_result.get("model_used", model_name),
+                "dimension": len(full_embedding) if full_embedding else len(embedding_preview),
+                "normalized": normalize
+            }
+
+        if not embedding_result or not embedding_result.get("success"):
+            raise HTTPException(status_code=400, detail="Failed to extract embedding")
 
         return JSONResponse(content={
             "success": True,
-            "embedding": result.get("embedding_preview", []),
-            "model_used": result.get("model_used", model_name),
-            "vector": result.get("embedding_preview", []),
-            "dimension": len(result.get("embedding_preview", [])),
+            "embedding": embedding_result.get("embedding", []),
+            "model_used": embedding_result.get("model_used", model_name),
+            "vector": embedding_result.get("embedding", []),
+            "dimension": embedding_result.get("dimension", 0),
+            "full_embedding": embedding_result.get("full_embedding", []),
+            "embedding_preview": embedding_result.get("embedding_preview", []),
             "normalized": normalize
         })
 
@@ -372,16 +371,7 @@ async def recognize_face_endpoint(
     request: RecognitionRequest,
     service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
-    """
-    Recognize face against gallery or internal database
-    
-    Body:
-    - face_image_base64: Base64 encoded image
-    - gallery: Optional external gallery for recognition
-    - model_name: Recognition model to use
-    - top_k: Number of top matches to return
-    - similarity_threshold: Minimum similarity threshold
-    """
+    """Recognize face against gallery or internal database"""
     try:
         # Validate inputs
         model_name = validate_model_name(request.model_name or "facenet")
@@ -413,30 +403,60 @@ async def recognize_face_endpoint(
             result_dict = await service.recognize_faces(
                 image_bytes=image_bytes,
                 model_name=model_name
-            )
+            )        # แก้ไข: ตรวจสอบโครงสร้างของ result ให้ถูกต้อง
+        if not result_dict or not result_dict.get("success", True):
+            return JSONResponse(content={
+                "success": False,
+                "error": result_dict.get("error", "Recognition failed") if result_dict else "Recognition failed",
+                "matches": [],
+                "best_match": None
+            })
 
-        # Filter results by top_k and similarity threshold
-        if "matches" in result_dict and request.top_k:
-            matches = result_dict["matches"][:request.top_k]
-            result_dict["matches"] = matches
-
-        if request.similarity_threshold:
-            if "matches" in result_dict:
-                filtered_matches = [
-                    match for match in result_dict["matches"]
-                    if match.get("similarity", 0) >= request.similarity_threshold
-                ]
-                result_dict["matches"] = filtered_matches
-                
-                # Update best_match if needed
-                if filtered_matches and result_dict.get("best_match"):
-                    best_similarity = result_dict["best_match"].get("similarity", 0)
-                    if best_similarity < request.similarity_threshold:
-                        result_dict["best_match"] = None
-
-        logger.info(f"Recognition complete: {len(result_dict.get('matches', []))} matches found")
+        # ดึงผลลัพธ์ที่ถูกต้อง
+        matches = result_dict.get("matches", result_dict.get("results", []))
         
-        return JSONResponse(content=result_dict)
+        # ตรวจสอบว่า matches ไม่เป็น None
+        if matches is None:
+            matches = []
+          # Filter results by top_k and similarity threshold
+        if matches and request.top_k:
+            matches = matches[:request.top_k]
+
+        if request.similarity_threshold and matches:
+            filtered_matches = [
+                match for match in matches
+                if match.get("similarity", match.get("confidence", 0)) >= request.similarity_threshold
+            ]
+            matches = filtered_matches
+
+        # หา best match
+        best_match = None
+        if matches and len(matches) > 0:
+            # Sort matches by similarity/confidence
+            matches = sorted(matches, key=lambda x: x.get("similarity", x.get("confidence", 0)), reverse=True)
+            best_match = matches[0]
+            
+            # ตรวจสอบ threshold
+            if request.similarity_threshold:
+                best_similarity = best_match.get("similarity", best_match.get("confidence", 0))
+                if best_similarity < request.similarity_threshold:
+                    best_match = None
+
+        # ตรวจสอบให้แน่ใจว่า matches ไม่เป็น None ก่อนใช้ len()
+        matches_count = len(matches) if matches else 0
+        logger.info(f"Recognition complete: {matches_count} matches found")
+        
+        return JSONResponse(content={
+            "success": True,
+            "matches": matches or [],
+            "best_match": best_match,
+            "top_match": best_match,  # Legacy field
+            "results": matches or [],  # Legacy field
+            "message": f"Found {matches_count} potential match(es).",
+            "query_embedding": result_dict.get("query_embedding", []),
+            "processing_time": result_dict.get("processing_time", 0.0),
+            "total_candidates": result_dict.get("total_candidates", 0)
+        })
 
     except HTTPException:
         raise
@@ -449,14 +469,7 @@ async def compare_faces_endpoint(
     request: CompareRequest,
     service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
-    """
-    Compare two faces for similarity
-    
-    Body:
-    - face1_image_base64: First face image (base64)
-    - face2_image_base64: Second face image (base64)
-    - model_name: Recognition model to use
-    """
+    """Compare two faces for similarity - Fixed Version"""
     try:
         # Validate inputs
         model_name = validate_model_name(request.model_name or "facenet")
@@ -473,60 +486,73 @@ async def compare_faces_endpoint(
 
         logger.info(f"Comparing two faces using {model_name}")
 
-        # Extract embeddings for both faces
-        result1 = await service.add_face_from_image(
-            image_bytes=image1_bytes,
-            person_name="temp_compare_1",
-            person_id="temp_compare_1",
-            model_name=model_name
-        )
-
-        result2 = await service.add_face_from_image(
-            image_bytes=image2_bytes,
-            person_name="temp_compare_2",
-            person_id="temp_compare_2",
-            model_name=model_name
-        )
-
-        if not (result1 and result1.get("success")) or not (result2 and result2.get("success")):
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to extract embeddings from one or both images"
+        # แก้ไข: ใช้ method เฉพาะสำหรับ comparison
+        try:
+            # ลองใช้ method compare_faces ถ้ามี
+            comparison_result = await service.compare_faces(
+                image1_bytes=image1_bytes,
+                image2_bytes=image2_bytes,
+                model_name=model_name
             )
-
-        # Calculate similarity (this is a simplified version)
-        emb1 = result1.get("embedding_preview", [])
-        emb2 = result2.get("embedding_preview", [])
-        
-        if not emb1 or not emb2:
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to extract valid embeddings"
+            
+            return JSONResponse(content=comparison_result)
+            
+        except AttributeError:
+            # Fallback: ใช้ embedding extraction manual
+            logger.info("Using manual embedding extraction for face comparison")
+            
+            # Extract embeddings for both faces
+            embedding1 = await service.extract_embedding_only(
+                image_bytes=image1_bytes,
+                model_name=model_name
             )
+            
+            embedding2 = await service.extract_embedding_only(
+                image_bytes=image2_bytes,
+                model_name=model_name
+            )
+            
+            if not (embedding1 and embedding1.get("success")) or not (embedding2 and embedding2.get("success")):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to extract embeddings from one or both images"
+                )
 
-        # Simple cosine similarity calculation
-        emb1_np = np.array(emb1)
-        emb2_np = np.array(emb2)
-        
-        # Normalize embeddings
-        emb1_norm = emb1_np / np.linalg.norm(emb1_np)
-        emb2_norm = emb2_np / np.linalg.norm(emb2_np)
-        
-        # Calculate cosine similarity
-        similarity = float(np.dot(emb1_norm, emb2_norm))
-          # Determine if faces match (using optimized threshold)
-        threshold = 0.5  # Lowered from 0.6 to 0.5
-        is_match = similarity >= threshold
+            # Calculate similarity
+            emb1 = embedding1.get("embedding", [])
+            emb2 = embedding2.get("embedding", [])
+            
+            if not emb1 or not emb2:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to extract valid embeddings"
+                )
 
-        return JSONResponse(content={
-            "success": True,
-            "similarity": similarity,
-            "is_match": is_match,
-            "threshold_used": threshold,
-            "model_used": model_name,
-            "confidence": similarity,
-            "distance": 1.0 - similarity
-        })
+            # Simple cosine similarity calculation
+            emb1_np = np.array(emb1, dtype=np.float32)
+            emb2_np = np.array(emb2, dtype=np.float32)
+            
+            # Normalize embeddings
+            emb1_norm = emb1_np / np.linalg.norm(emb1_np)
+            emb2_norm = emb2_np / np.linalg.norm(emb2_np)
+            
+            # Calculate cosine similarity
+            similarity = float(np.dot(emb1_norm, emb2_norm))
+            
+            # Determine if faces match (using optimized threshold)
+            threshold = 0.5
+            is_match = similarity >= threshold
+
+            return JSONResponse(content={
+                "success": True,
+                "similarity": similarity,
+                "is_match": is_match,
+                "is_same_person": is_match,
+                "threshold_used": threshold,
+                "model_used": model_name,
+                "confidence": similarity,
+                "distance": 1.0 - similarity
+            })
 
     except HTTPException:
         raise
@@ -580,13 +606,7 @@ async def set_gallery_endpoint(
     request: GalleryUpdateRequest,
     service = Depends(get_face_recognition_service)
 ) -> Dict[str, Any]:
-    """
-    Set/update the face gallery
-    
-    Body:
-    - gallery: New gallery data
-    - merge_with_existing: Whether to merge with existing data
-    """
+    """Set/update the face gallery"""
     try:
         if not request.merge_with_existing:
             # Clear existing database
@@ -594,14 +614,9 @@ async def set_gallery_endpoint(
             logger.info("Cleared existing face database")
 
         # This is a simplified implementation
-        # In a real scenario, you'd need to convert the gallery format
-        # to match the internal database format
-        
         updated_count = 0
         for person_id, person_data in request.gallery.items():
             if isinstance(person_data, dict):
-                # Convert gallery format to database format would go here
-                # This is a placeholder
                 updated_count += 1
 
         return {
@@ -725,15 +740,41 @@ async def get_available_models(
     try:
         service_info = service.get_service_info()
         
+        # Debug: Log service configuration
+        logger.info(f"🔍 API Debug - Service instance: {id(service)}")
+        logger.info(f"🔍 API Debug - Multi-framework enabled: {getattr(service, 'enable_multi_framework', False)}")
+        logger.info(f"🔍 API Debug - Requested frameworks: {getattr(service, 'requested_frameworks', [])}")
+        
+        # Get available frameworks from the service
+        try:
+            available_frameworks = service.get_available_frameworks()
+            logger.info(f"🔍 API Debug - Available frameworks returned: {available_frameworks}")
+        except Exception as e:
+            logger.error(f"🔍 API Debug - Framework detection failed: {e}")
+            # Fallback to ONNX models if framework detection fails
+            available_frameworks = ["facenet", "adaface", "arcface"]
+            
+        # Calculate total models
+        total_models = len(available_frameworks)
+        
         return {
-            "available_models": ["facenet", "adaface", "arcface"],
+            "available_models": available_frameworks,
+            "total_models": total_models,
+            "onnx_models": ["facenet", "adaface", "arcface"],
+            "framework_models": ["deepface", "facenet_pytorch", "dlib", "insightface", "edgeface"],
             "current_model": service_info.get("model_info", {}).get("current_model"),
             "model_info": service_info.get("model_info", {}),
+            "multi_framework_enabled": getattr(service, 'enable_multi_framework', False),
             "supported_formats": ["jpg", "jpeg", "png", "bmp", "tiff", "webp"],
             "embedding_dimensions": {
                 "facenet": 512,
                 "adaface": 512,
-                "arcface": 512
+                "arcface": 512,
+                "deepface": 512,
+                "facenet_pytorch": 512,
+                "dlib": 128,
+                "insightface": 512,
+                "edgeface": 512
             },
             "recommended_models": {
                 "general": "facenet",

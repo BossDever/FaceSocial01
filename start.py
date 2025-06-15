@@ -31,6 +31,11 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
             logging.FileHandler("logs/startup.log", encoding='utf-8')
         ]
     )
+    
+    # Silence watchfiles logger
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+    logging.getLogger("watchdog").setLevel(logging.WARNING)
+    
     return logging.getLogger(__name__)
 
 def check_system_requirements() -> bool:

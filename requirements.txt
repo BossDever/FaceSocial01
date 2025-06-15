@@ -1,5 +1,5 @@
-# Face Recognition System Requirements
-# Fixed version with compatible versions and proper dependencies
+# Face Recognition System Requirements - Multi-Framework Edition
+# Enhanced with support for DeepFace, ArcFace, FaceNet, Dlib, InsightFace, EdgeFace
 
 # Core Framework
 fastapi==0.115.12
@@ -22,21 +22,57 @@ onnxruntime-gpu==1.22.0
 # YOLO Models
 ultralytics==8.3.152
 
-# Image Processing
+# === Multi-Framework Face Recognition Dependencies ===
+
+# DeepFace - Ultimate Framework with Multiple Models
+deepface==0.0.89
+tensorflow==2.16.1
+keras==2.16.0
+
+# FaceNet PyTorch Implementation  
+facenet-pytorch==2.6.0
+
+# Dlib - C++ Performance Library
+dlib==19.24.2
+cmake>=3.18.0  # Required for dlib compilation
+wheel>=0.37.0  # Required for dlib installation
+
+# InsightFace - State-of-the-art Face Analysis
+insightface==0.7.3
+onnx==1.16.0
+mxnet==1.9.1  # Required for some InsightFace models
+
+# Additional ML Libraries for EdgeFace and advanced models
+albumentations==1.4.0
+imgaug==0.4.0
+
+# === Supporting Libraries ===
+
+# Image Processing Advanced
 imageio==2.37.0
+scikit-image==0.24.0
 
 # Web & API
 aiofiles==0.8.0
 python-dotenv==1.0.0
 requests==2.32.3
 
-# Utilities
+# Utilities & Logging
 coloredlogs==15.0.1
 tqdm==4.67.1
+psutil==5.9.8  # For system monitoring
 
-# Data Processing
+# Data Processing & Analysis
 pandas==2.3.0
 scipy==1.15.3
+matplotlib==3.10.3
+seaborn==0.13.2
+
+# JSON & Serialization
+orjson==3.9.15  # Fast JSON processing
+
+# Concurrent Processing
+concurrent-futures>=3.1.1  # For batch processing
 
 # Development Tools (Optional)
 pytest==8.0.0
@@ -44,23 +80,40 @@ black==25.1.0
 isort==5.13.0
 mypy==1.8.0
 
-# Additional dependencies for complete functionality
+# Additional Runtime Dependencies
 httpx==0.24.1
 starlette==0.41.3
 anyio==4.4.0
 
-# Optional image processing libraries
-# scikit-image==0.25.2  # Commented out to avoid conflicts
-# albumentations==2.0.8  # Commented out to reduce dependencies
-# insightface==0.7.3  # Commented out due to potential conflicts
-# facexlib==0.3.0  # Commented out due to potential conflicts
+# === Optional High-Performance Libraries ===
+# Uncomment these for additional performance
 
-# Analysis & Visualization (Optional)
-matplotlib==3.10.3
-seaborn==0.13.2
+# TensorRT (NVIDIA GPU acceleration)
+# tensorrt>=8.0.0
 
-# Jupyter (Optional - for development)
-# jupyter==1.1.1  # Commented out to reduce dependencies
+# OpenVINO (Intel CPU/GPU acceleration)  
+# openvino>=2023.0.0
 
-# CPU fallback for ONNX Runtime (uncomment if GPU not available)
+# === Alternative ONNX Runtime (CPU only) ===
+# Uncomment if GPU not available, comment out onnxruntime-gpu above
 # onnxruntime==1.22.0
+
+# === Face Recognition Model Files ===
+# Note: Some models will be downloaded automatically on first use
+# DeepFace models: VGG-Face, Facenet, ArcFace, Dlib, etc.
+# FaceNet models: VGGFace2, CASIA-WebFace  
+# InsightFace models: Buffalo_l, etc.
+
+# === Installation Notes ===
+# For Windows users:
+# 1. Install Visual Studio Build Tools before dlib
+# 2. Install CMake before dlib
+# 3. For CUDA support, install CUDA Toolkit 11.8 or compatible
+#
+# For Linux users:
+# sudo apt-get install cmake libopenblas-dev liblapack-dev
+# sudo apt-get install libgl1-mesa-glx libglib2.0-0
+#
+# For macOS users:
+# brew install cmake
+# brew install openblas lapack
