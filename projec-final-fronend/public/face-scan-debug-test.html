@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Scan Login Test - Debug Version</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+                       const formData = new FormData();
+                formData.append('image', croppedBlob, 'face.jpg');
+                formData.append('confidence_threshold', '0.5'); // ใช้ threshold เดียวกับ real-time  background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #2196f3;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            border-left-color: #f44336;
+        }
+        .success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border-left-color: #4caf50;
+        }
+        video, canvas {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        .image-preview {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        .image-preview img {
+            max-width: 150px;
+            max-height: 150px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Face Scan Login Test - Debug Version</h1>
+        <p>This page tests the improved face scanning logic with detailed logging.</p>
+        
+        <div class="status" id="status">Ready to start...</div>
+        
+        <div>
+            <video id="video" width="400" height="300" autoplay muted style="display: none;"></video>
+            <canvas id="canvas" width="400" height="300" style="display: none;"></canvas>
+        </div>
+        
+        <div>
+            <button id="startCamera">Start Camera</button>
+            <button id="takePhoto" disabled>Take Photo & Test</button>
+            <button id="stopCamera" disabled>Stop Camera</button>
+        </div>
+        
+        <div class="image-preview" id="imagePreview"></div>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let stream = null;
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        async function startCamera() {
+            try {
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    } 
+                });
+                
+                video.srcObject = stream;
+                video.style.display = 'block';
+                
+                document.getElementById('startCamera').disabled = true;
+                document.getElementById('takePhoto').disabled = false;
+                document.getElementById('stopCamera').disabled = false;
+                
+                updateStatus('Camera started successfully', 'success');
+                log('Camera started with resolution: ' + video.videoWidth + 'x' + video.videoHeight);
+            } catch (error) {
+                updateStatus('Failed to start camera: ' + error.message, 'error');
+                log('Camera error: ' + error.toString());
+            }
+        }
+        
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            if (video) {
+                video.style.display = 'none';
+                video.srcObject = null;
+            }
+            
+            document.getElementById('startCamera').disabled = false;
+            document.getElementById('takePhoto').disabled = true;
+            document.getElementById('stopCamera').disabled = true;
+            
+            updateStatus('Camera stopped', 'info');
+        }
+          async function detectFace(imageData) {
+            try {
+                log('Starting face detection...');
+                
+                // Convert base64 to blob for FormData
+                const base64Data = imageData.split(',')[1];
+                const byteCharacters = atob(base64Data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'image/jpeg' });
+                  // Create FormData for Face Detection API
+                const formData = new FormData();
+                formData.append('file', blob, 'test_face.jpg');
+                formData.append('model_name', 'yolov11m'); // ใช้ model เดียวกับ real-time
+                formData.append('conf_threshold', '0.5');
+                formData.append('max_faces', '5'); // เพิ่มจำนวนหน้าที่ตรวจได้
+                
+                const response = await fetch('http://localhost:8080/api/face-detection/detect', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Face detection failed: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                log(`Face detection result: ${JSON.stringify(result)}`);
+                
+                if (!result.success || !result.faces || result.faces.length === 0) {
+                    throw new Error('No faces detected');
+                }
+                
+                return result.faces[0]; // Return first face
+            } catch (error) {
+                log(`Face detection error: ${error.message}`);
+                throw error;
+            }
+        }
+        
+        function cropFaceImage(imageData, bbox) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                  img.onload = () => {                    try {
+                        // Debug: log raw bbox data
+                        log(`Raw bbox data: ${JSON.stringify(bbox)}`);
+                        
+                        // Convert bbox from x1,y1,x2,y2 format to x,y,width,height format
+                        let face_bbox;
+                        if (bbox.x1 !== undefined && bbox.y1 !== undefined && bbox.x2 !== undefined && bbox.y2 !== undefined) {
+                            // Format: x1, y1, x2, y2
+                            face_bbox = {
+                                x: Math.round(bbox.x1),
+                                y: Math.round(bbox.y1),
+                                width: Math.round(bbox.x2 - bbox.x1),
+                                height: Math.round(bbox.y2 - bbox.y1)
+                            };
+                        } else if (bbox.x !== undefined && bbox.y !== undefined && bbox.width !== undefined && bbox.height !== undefined) {
+                            // Format: x, y, width, height
+                            face_bbox = {
+                                x: Math.round(bbox.x),
+                                y: Math.round(bbox.y),
+                                width: Math.round(bbox.width),
+                                height: Math.round(bbox.height)
+                            };
+                        } else {
+                            throw new Error(`Unknown bbox format: ${JSON.stringify(bbox)}`);
+                        }
+                        
+                        // Validate bbox dimensions
+                        if (face_bbox.width <= 0 || face_bbox.height <= 0) {
+                            throw new Error(`Invalid bbox dimensions: width=${face_bbox.width}, height=${face_bbox.height}`);
+                        }
+                        
+                        log(`Original image: ${img.width}x${img.height}`);
+                        log(`Face bbox: x=${face_bbox.x}, y=${face_bbox.y}, w=${face_bbox.width}, h=${face_bbox.height}`);                        log(`Face confidence: ${bbox.confidence || 'N/A'}`);
+                        
+                        // Add generous padding around face (20% of bbox size, consistent with RealTimeAntiSpoofing)
+                        const padding = 0.2; // 20% padding like in React component
+                        const faceWidth = face_bbox.width;
+                        const faceHeight = face_bbox.height;
+                        const paddingX = faceWidth * padding;
+                        const paddingY = faceHeight * padding;
+                        
+                        const cropX = Math.max(0, Math.round(face_bbox.x - paddingX));
+                        const cropY = Math.max(0, Math.round(face_bbox.y - paddingY));
+                        const cropWidth = Math.min(img.width - cropX, Math.round(faceWidth + (paddingX * 2)));
+                        const cropHeight = Math.min(img.height - cropY, Math.round(faceHeight + (paddingY * 2)));
+                        
+                        log(`Crop region: x=${cropX}, y=${cropY}, w=${cropWidth}, h=${cropHeight}`);
+                        
+                        // Validate crop dimensions
+                        if (cropWidth <= 0 || cropHeight <= 0 || cropX < 0 || cropY < 0) {
+                            throw new Error(`Invalid crop dimensions: x=${cropX}, y=${cropY}, w=${cropWidth}, h=${cropHeight}`);
+                        }
+                        
+                        if (cropX + cropWidth > img.width || cropY + cropHeight > img.height) {
+                            throw new Error(`Crop region exceeds image bounds: img=${img.width}x${img.height}, crop=${cropX + cropWidth}x${cropY + cropHeight}`);
+                        }
+                          // Ensure minimum size (at least 224x224) and reasonable max size for better anti-spoofing detection
+                        const minSize = 224; // ขนาดที่เหมาะสมสำหรับ anti-spoofing model
+                        const maxSize = 640;
+                        const targetSize = Math.max(minSize, Math.min(maxSize, Math.max(cropWidth, cropHeight)));
+                        
+                        // Calculate final dimensions maintaining aspect ratio
+                        let finalWidth, finalHeight;
+                        if (cropWidth > cropHeight) {
+                            finalWidth = targetSize;
+                            finalHeight = Math.floor((cropHeight / cropWidth) * targetSize);
+                        } else {
+                            finalHeight = targetSize;
+                            finalWidth = Math.floor((cropWidth / cropHeight) * targetSize);
+                        }
+                        
+                        // Ensure minimum dimensions
+                        finalWidth = Math.max(finalWidth, minSize);
+                        finalHeight = Math.max(finalHeight, minSize);
+                        
+                        tempCanvas.width = finalWidth;
+                        tempCanvas.height = finalHeight;
+                        
+                        // Draw and resize cropped face to canvas
+                        tempCtx.drawImage(
+                            img, 
+                            cropX, cropY, cropWidth, cropHeight,
+                            0, 0, finalWidth, finalHeight
+                        );
+                        
+                        // Get cropped image as base64 with good quality
+                        const croppedDataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
+                        
+                        log(`Cropped image: ${finalWidth}x${finalHeight}, quality: 90%`);
+                        
+                        // Show preview
+                        const preview = document.getElementById('imagePreview');
+                        preview.innerHTML = `
+                            <div>
+                                <h4>Original</h4>
+                                <img src="${imageData}" alt="Original">
+                            </div>
+                            <div>
+                                <h4>Cropped Face</h4>
+                                <img src="${croppedDataUrl}" alt="Cropped">
+                            </div>
+                        `;
+                        
+                        resolve(croppedDataUrl);
+                    } catch (error) {
+                        log(`Crop error: ${error.message}`);
+                        reject(error);
+                    }
+                };
+                
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = imageData;
+            });
+        }
+          async function testAntiSpoofing(croppedImageData) {
+            try {
+                log('Starting anti-spoofing test...');
+                
+                // Validate input
+                if (!croppedImageData || !croppedImageData.startsWith('data:image/')) {
+                    throw new Error('Invalid cropped image data');
+                }
+                
+                const croppedBase64 = croppedImageData.split(',')[1];
+                if (!croppedBase64 || croppedBase64.length < 100) {
+                    throw new Error(`Base64 string too short: ${croppedBase64?.length || 0} characters`);
+                }
+                
+                log(`Base64 string length: ${croppedBase64.length}`);
+                
+                // Convert base64 to Blob with error handling
+                let croppedBlob;
+                try {
+                    const byteCharacters = atob(croppedBase64);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    croppedBlob = new Blob([byteArray], { type: 'image/jpeg' });
+                } catch (conversionError) {
+                    throw new Error(`Failed to convert base64 to blob: ${conversionError.message}`);
+                }                
+                log(`Image conversion successful: base64Length=${croppedBase64.length}, blobSize=${croppedBlob.size}, blobType=${croppedBlob.type}`);
+                
+                // Validate blob size
+                if (croppedBlob.size < 500) {
+                    throw new Error(`Generated image blob is too small: ${croppedBlob.size} bytes (minimum 500 bytes required)`);
+                } else if (croppedBlob.size > 10 * 1024 * 1024) {
+                    throw new Error(`Generated image blob is too large: ${croppedBlob.size} bytes (maximum 10MB allowed)`);
+                } else {
+                    log(`✓ Image size is adequate: ${croppedBlob.size} bytes`);                }
+                
+                const formData = new FormData();
+                formData.append('image', croppedBlob, 'face.jpg');
+                formData.append('confidence_threshold', '0.5'); // ใช้ threshold เดียวกับ real-time
+                
+                const response = await fetch('http://localhost:8080/api/anti-spoofing/detect-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`Anti-spoofing API response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Anti-spoofing failed: ${response.status} - ${errorText}`);
+                }
+                
+                const result = await response.json();
+                log(`Anti-spoofing result: ${JSON.stringify(result)}`);
+                
+                return result;
+            } catch (error) {
+                log(`Anti-spoofing error: ${error.message}`);
+                throw error;
+            }
+        }
+        
+        async function takePhotoAndTest() {
+            try {
+                updateStatus('Taking photo...', 'info');
+                
+                if (!video || video.videoWidth === 0) {
+                    throw new Error('Camera not ready');
+                }
+                
+                // Capture photo
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+                canvas.style.display = 'block';
+                
+                const imageData = canvas.toDataURL('image/jpeg', 0.9);
+                log(`Captured image: ${video.videoWidth}x${video.videoHeight}`);
+                
+                updateStatus('Detecting face...', 'info');
+                  // Detect face
+                const face = await detectFace(imageData);
+                log(`Face detected with confidence: ${face.bbox?.confidence || face.confidence || 'N/A'}`);
+                
+                updateStatus('Cropping face...', 'info');
+                
+                // Crop face - pass the bbox object, not the entire face object
+                const croppedImage = await cropFaceImage(imageData, face.bbox);
+                
+                updateStatus('Testing anti-spoofing...', 'info');
+                  // Test anti-spoofing
+                const spoofingResult = await testAntiSpoofing(croppedImage);
+                
+                // Extract the overall result from the API response
+                const overallResult = spoofingResult.overall_result || spoofingResult;
+                const isReal = overallResult.is_real;
+                const confidence = overallResult.confidence;
+                
+                if (isReal) {
+                    updateStatus(`✓ Success! Real face detected (confidence: ${(confidence * 100).toFixed(1)}%)`, 'success');
+                } else {
+                    updateStatus(`⚠ Spoofing detected (confidence: ${(confidence * 100).toFixed(1)}%)`, 'error');
+                }
+                
+                log(`Complete test successful!`);
+                
+            } catch (error) {
+                updateStatus(`❌ Test failed: ${error.message}`, 'error');
+                log(`Test failed: ${error.toString()}`);
+            }
+        }
+        
+        // Event listeners
+        document.getElementById('startCamera').addEventListener('click', startCamera);
+        document.getElementById('stopCamera').addEventListener('click', stopCamera);
+        document.getElementById('takePhoto').addEventListener('click', takePhotoAndTest);
+        
+        // Initialize
+        log('Face Scan Debug Test initialized');
+    </script>
+</body>
+</html>

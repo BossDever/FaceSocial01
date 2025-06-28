@@ -548,13 +548,14 @@ class FaceRecognitionService:
             return {"success": False, "error": str(e)}
 
     # =================== EXISTING METHODS WITH FIXES ===================
-
+    
     async def add_face_from_image(
         self,
         image_bytes: bytes,
         person_name: str,
         person_id: Optional[str] = None,
         model_name: Optional[Union[str, RecognitionModel]] = None,
+        fast_mode: bool = False
     ) -> Dict[str, Any]:
         """Add a face from an image to the database."""
         if person_id is None:
@@ -1468,15 +1469,19 @@ class FaceRecognitionService:
         """Extract embedding using DeepFace"""
         try:
             from deepface import DeepFace
-            
-            # Save image temporarily
+              # Save image temporarily
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
                 cv2.imwrite(tmp_file.name, image)
                 tmp_path = tmp_file.name
             
             try:
-                # Extract embedding
-                embedding_objs = DeepFace.represent(img_path=tmp_path, model_name='Facenet')
+                # Extract embedding with face detection disabled for more robust processing
+                embedding_objs = DeepFace.represent(
+                    img_path=tmp_path, 
+                    model_name='Facenet',
+                    enforce_detection=False,
+                    detector_backend='skip'
+                )
                 if embedding_objs and len(embedding_objs) > 0:
                     embedding = np.array(embedding_objs[0]['embedding'], dtype=np.float32)
                     return embedding
@@ -1651,14 +1656,19 @@ class FaceRecognitionService:
             }
         except Exception as e:
             self.logger.error(f"Error clearing gallery: {e}")
-            return {
-                "success": False,
+            return {                "success": False,
                 "error": str(e)
             }
 
     async def get_gallery_stats(self) -> Dict[str, Any]:
         """Get statistics about the current gallery"""
-        try:
+        try:            # Debug: ดูสถานะฐานข้อมูลปัจจุบัน
+            self.logger.info(f"🔍 Checking face_database: {len(self.face_database)} people")
+            self.logger.info(f"🔧 Service instance ID: {id(self)}, Database instance ID: {id(self.face_database)}")
+            if self.face_database:
+                for person_id, faces in self.face_database.items():
+                    self.logger.info(f"🔍 Person {person_id}: {len(faces)} faces")
+            
             total_persons = len(self.face_database)
             total_faces = sum(len(faces) for faces in self.face_database.values())
             
@@ -1666,8 +1676,10 @@ class FaceRecognitionService:
             for person_id, faces in self.face_database.items():
                 person_stats[person_id] = {
                     "face_count": len(faces),
-                    "embeddings": [face.face_id for face in faces]
+                    "embeddings": [face.id for face in faces]  # แก้ไขจาก face.face_id เป็น face.id
                 }
+            
+            self.logger.info(f"📊 Gallery stats: {total_persons} persons, {total_faces} faces")
             
             return {
                 "total_persons": total_persons,

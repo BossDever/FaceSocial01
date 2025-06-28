@@ -305,6 +305,13 @@ def main() -> bool:
     
     args = parser.parse_args()
     
+    # Check for environment variable override for reload mode
+    reload_env = os.getenv("RELOAD_MODE", "").lower()
+    if reload_env in ("true", "1", "yes"):
+        args.no_reload = False
+    elif reload_env in ("false", "0", "no"):
+        args.no_reload = True
+    
     # Setup logging
     logger = setup_logging(args.log_level)
     

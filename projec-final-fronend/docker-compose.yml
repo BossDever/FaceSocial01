@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # Next.js Frontend Application
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DATABASE_URL: postgresql://admin:password123@postgres:5432/facesocial
+        NEXTAUTH_SECRET: your-super-secret-key-here-change-in-production
+        NEXTAUTH_URL: http://localhost:3000
+        BACKEND_API_URL: http://host.docker.internal:8080
+    container_name: facesocial_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://admin:password123@postgres:5432/facesocial
+      - NEXTAUTH_SECRET=your-super-secret-key-here-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+      - BACKEND_API_URL=http://host.docker.internal:8080
+      - REDIS_URL=redis://:redis123@redis:6379
+    volumes:
+      # Mount for development (comment out for production)
+      # - .:/app
+      # - /app/node_modules
+      # - /app/.next
+      - prisma_data:/app/prisma
+    networks:
+      - facesocial_network
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  # PostgreSQL Database with Extensions
+  postgres:
+    image: postgres:15-alpine
+    container_name: facesocial_postgres
+    environment:
+      POSTGRES_DB: facesocial
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - facesocial_network
+    restart: unless-stopped
+    # Install required PostgreSQL extensions
+    command: |
+      sh -c "
+      apt-get update && apt-get install -y postgresql-15-contrib || true
+      docker-entrypoint.sh postgres
+      "
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: facesocial_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - facesocial_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redis123
+
+  # pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: facesocial_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@facesocial.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8081:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - facesocial_network
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  prisma_data:
+    driver: local
+
+networks:
+  facesocial_network:
+    driver: bridge

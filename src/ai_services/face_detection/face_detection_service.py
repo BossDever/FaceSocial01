@@ -256,8 +256,7 @@ class FaceDetectionService:
         # Performance tracking
         self.performance_stats = {
             "total_detections": 0,
-            "successful_detections": 0,
-            "fallback_used_count": 0,
+            "successful_detections": 0,            "fallback_used_count": 0,
             "average_processing_time": 0.0,
             "model_usage_count": {
                 "yolov9c": 0,
@@ -267,12 +266,43 @@ class FaceDetectionService:
             },
         }
 
+    def _check_gpu_availability(self) -> bool:
+        """Check GPU availability directly"""
+        try:
+            # Check via ONNX Runtime
+            import onnxruntime as ort
+            providers = ort.get_available_providers()
+            if 'CUDAExecutionProvider' in providers:
+                logger.info("✅ GPU available via ONNX Runtime")
+                return True
+            
+            # Check via PyTorch
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    logger.info("✅ GPU available via PyTorch")
+                    return True
+            except ImportError:
+                pass
+                
+            logger.warning("⚠️ No GPU available")
+            return False
+            
+        except Exception as e:
+            logger.warning(f"⚠️ GPU check failed: {e}")
+            return False
+
     async def initialize(self) -> bool:
         """โหลดโมเดลตรวจจับใบหน้าทั้งหมด"""
         try:
             logger.info("Loading face detection models (Enhanced/Relaxed Mode)...")
 
-            # Request VRAM allocations
+            # Check GPU availability directly (bypass VRAM Manager for now)
+            gpu_available = self._check_gpu_availability()
+            device = "cuda" if gpu_available else "cpu"
+            logger.info(f"🎯 Face Detection using device: {device}")
+
+            # Request VRAM allocations (for tracking but not for device decision)
             yolov9c_allocation = await self.vram_manager.request_model_allocation(
                 "yolov9c-face", "high", "face_detection_service"
             )
@@ -281,36 +311,25 @@ class FaceDetectionService:
             )
             yolov11m_allocation = await self.vram_manager.request_model_allocation(
                 "yolov11m-face", "critical", "face_detection_service"
-            )
-
-            # Load YOLOv9c
+            )            # Load YOLOv9c
             self.models["yolov9c"] = YOLOv9ONNXDetector(
                 self.yolov9c_model_path, "YOLOv9c"
             )
-            device_yolov9c = (
-                "cuda" if yolov9c_allocation.location.value == "gpu" else "cpu"
-            )
-            if not self.models["yolov9c"].load_model(device_yolov9c):
+            if not self.models["yolov9c"].load_model(device):
                 logger.error("Failed to load YOLOv9c model")
 
             # Load YOLOv9e
             self.models["yolov9e"] = YOLOv9ONNXDetector(
                 self.yolov9e_model_path, "YOLOv9e"
             )
-            device_yolov9e = (
-                "cuda" if yolov9e_allocation.location.value == "gpu" else "cpu"
-            )
-            if not self.models["yolov9e"].load_model(device_yolov9e):
+            if not self.models["yolov9e"].load_model(device):
                 logger.error("Failed to load YOLOv9e model")
 
             # Load YOLOv11m
             self.models["yolov11m"] = YOLOv11Detector(
                 self.yolov11m_model_path, "YOLOv11m"
             )
-            device_yolov11m = (
-                "cuda" if yolov11m_allocation.location.value == "gpu" else "cpu"
-            )
-            if not self.models["yolov11m"].load_model(device_yolov11m):
+            if not self.models["yolov11m"].load_model(device):
                 logger.error("Failed to load YOLOv11m model")
 
             # Check if at least one model loaded successfully

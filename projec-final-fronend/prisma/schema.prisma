@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(uuid())
+  username        String          @unique @db.VarChar(50)
+  email           String          @unique @db.VarChar(255)
+  passwordHash    String          @map("password_hash") @db.VarChar(255)
+  firstName       String          @map("first_name") @db.VarChar(100)
+  lastName        String          @map("last_name") @db.VarChar(100)
+  phone           String?         @db.VarChar(20)
+  dateOfBirth     DateTime?       @map("date_of_birth") @db.Date
+  profileImageUrl String?         @map("profile_image_url")
+  profilePicture  String?         @map("profile_picture")
+  bio             String?
+  isOnline        Boolean         @default(false) @map("is_online")
+  lastSeen        DateTime?       @map("last_seen")
+  isActive        Boolean         @default(true) @map("is_active")
+  isVerified      Boolean         @default(false) @map("is_verified")
+  emailVerifiedAt DateTime?       @map("email_verified_at")
+  phoneVerifiedAt DateTime?       @map("phone_verified_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?       @map("last_login_at")
+  faceEmbeddings  FaceEmbedding[]
+  userSessions    UserSession[]
+  
+  // Social features
+  posts           Post[]
+  likes           Like[]
+  comments        Comment[]
+  sentMessages    Message[]       @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  friends         Friendship[]    @relation("UserFriends")
+  friendOf        Friendship[]    @relation("FriendOfUser")
+  
+  // New features
+  notifications   Notification[]
+  sentNotifications Notification[] @relation("NotificationSender")
+  faceTags        FaceTag[]
+  taggedInPosts   FaceTag[]       @relation("TaggedUser")
+
+  @@map("users")
+}
+
+model FaceEmbedding {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  embeddingModel      String   @default("facenet") @map("embedding_model") @db.VarChar(50)
+  embeddingData       Float[]  @map("embedding_data")
+  imageUrl            String?  @map("image_url")
+  faceImageData       String?  @map("face_image_data")
+  imageHash           String?  @map("image_hash") @db.VarChar(64)
+  qualityScore        Float?   @default(0.0) @map("quality_score")
+  detectionConfidence Float?   @default(0.0) @map("detection_confidence")
+  landmarkData        Json?    @map("landmark_data")
+  isPrimary           Boolean  @default(false) @map("is_primary")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("face_embeddings")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  sessionToken String   @unique @map("session_token") @db.VarChar(255)
+  refreshToken String?  @unique @map("refresh_token") @db.VarChar(255)
+  ipAddress    String?  @map("ip_address") @db.Inet
+  userAgent    String?  @map("user_agent")
+  deviceInfo   Json?    @map("device_info")
+  isActive     Boolean  @default(true) @map("is_active")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// Social Features Models
+model Post {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  content   String
+  imageUrl  String?   @map("image_url")
+  location  String?   
+  isPublic  Boolean   @default(true) @map("is_public")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes     Like[]
+  comments  Comment[]
+  faceTags  FaceTag[]
+
+  @@map("posts")
+}
+
+model Like {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  postId String @map("post_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@map("likes")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  content    String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Friendship {
+  id        String            @id @default(uuid())
+  userId    String            @map("user_id")
+  friendId  String            @map("friend_id")
+  status    FriendshipStatus  @default(PENDING)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @default(now()) @updatedAt @map("updated_at")
+  user      User              @relation("UserFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend    User              @relation("FriendOfUser", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@map("friendships")
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String           @map("user_id")  // ผู้รับการแจ้งเตือน
+  senderId   String?          @map("sender_id") // ผู้ส่งการแจ้งเตือน (อาจเป็น null สำหรับระบบ)
+  type       NotificationType
+  title      String
+  message    String
+  data       Json?            // ข้อมูลเพิ่มเติม (เช่น postId, friendRequestId)
+  isRead     Boolean          @default(false) @map("is_read")
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @default(now()) @updatedAt @map("updated_at")
+  
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender     User?            @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model FaceTag {
+  id             String   @id @default(uuid())
+  postId         String   @map("post_id")
+  taggedUserId   String   @map("tagged_user_id")
+  taggerUserId   String   @map("tagger_user_id")
+  x              Float    // ตำแหน่ง X ในรูปภาพ (0-1)
+  y              Float    // ตำแหน่ง Y ในรูปภาพ (0-1)
+  width          Float    // ความกว้างของ bounding box (0-1)
+  height         Float    // ความสูงของ bounding box (0-1)
+  confidence     Float?   // ความแม่นยำจาก face recognition
+  isConfirmed    Boolean  @default(false) @map("is_confirmed") // ยืนยันโดยผู้ถูกแท็ค
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+  
+  post           Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  taggedUser     User     @relation("TaggedUser", fields: [taggedUserId], references: [id], onDelete: Cascade)
+  tagger         User     @relation(fields: [taggerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, taggedUserId])
+  @@map("face_tags")
+}
+
+enum NotificationType {
+  FRIEND_REQUEST
+  FRIEND_ACCEPTED
+  POST_LIKE
+  POST_COMMENT
+  FACE_TAG
+  MENTION
+  SYSTEM
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}

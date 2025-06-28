@@ -13,6 +13,7 @@ import base64
 import logging
 import os
 import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,18 @@ class AddFaceRequest(BaseModel):
     face_image_base64: str
     model_name: Optional[str] = "facenet"
     metadata: Optional[Dict[str, Any]] = None
+    fast_mode: Optional[bool] = False  # Add fast mode option
+    
+    # Simple Processing parameters
+    processing_mode: Optional[str] = None  # "simple" or "enhanced"
+    skip_preprocessing: Optional[bool] = None
+    use_fast_detection: Optional[bool] = None
+    
+    # DeepFace specific parameters
+    deepface_enforce_detection: Optional[bool] = None
+    deepface_detector_backend: Optional[str] = None
+    deepface_align: Optional[bool] = None
+    deepface_normalization: Optional[str] = None
 
 class RecognitionRequest(BaseModel):
     face_image_base64: str
@@ -32,6 +45,17 @@ class RecognitionRequest(BaseModel):
     model_name: Optional[str] = "facenet"
     top_k: Optional[int] = 5
     similarity_threshold: Optional[float] = 0.5
+    
+    # Simple Processing parameters
+    processing_mode: Optional[str] = None  # "simple" or "enhanced"
+    skip_preprocessing: Optional[bool] = None
+    use_fast_detection: Optional[bool] = None
+    
+    # DeepFace specific parameters
+    deepface_enforce_detection: Optional[bool] = None
+    deepface_detector_backend: Optional[str] = None
+    deepface_align: Optional[bool] = None
+    deepface_normalization: Optional[str] = None
 
 class EmbeddingRequest(BaseModel):
     face_image_base64: str
@@ -46,6 +70,15 @@ class CompareRequest(BaseModel):
 class GalleryUpdateRequest(BaseModel):
     gallery: Dict[str, Any]
     merge_with_existing: bool = False
+
+class MultipleRegistrationRequest(BaseModel):
+    full_name: str
+    employee_id: str
+    department: Optional[str] = None
+    position: Optional[str] = None  
+    model_name: Optional[str] = "adaface"
+    images: List[str]  # List of base64 encoded images
+    metadata: Optional[Dict[str, Any]] = None
 
 # === UTILITY FUNCTIONS ===
 def decode_base64_image(image_base64: str) -> np.ndarray:
@@ -230,8 +263,7 @@ async def add_face_json_endpoint(
     try:
         # Validate inputs
         model_name = validate_model_name(request.model_name or "facenet")
-        person_id = validate_person_id(request.person_id or request.person_name)
-        
+        person_id = validate_person_id(request.person_id or request.person_name)        
         # Decode base64 image
         try:
             image_bytes = base64.b64decode(request.face_image_base64)
@@ -244,14 +276,33 @@ async def add_face_json_endpoint(
         if len(image_bytes) == 0:
             raise HTTPException(status_code=400, detail="Empty image data")
 
-        logger.info(f"Adding face for {request.person_name} (ID: {person_id}) from JSON request")
-
-        # Add face to database
+        logger.info(f"Adding face for {request.person_name} (ID: {person_id}) from JSON request (fast_mode: {request.fast_mode})")        # Add face to database with all parameters
+        # If any "simple processing" parameters are set, enable fast_mode
+        use_fast_mode = (
+            request.fast_mode or 
+            request.processing_mode == "simple" or 
+            request.skip_preprocessing == True
+        )
+        
+        # Prepare additional options for DeepFace
+        additional_options = {}
+        if model_name == "deepface":
+            if request.deepface_enforce_detection is not None:
+                additional_options["enforce_detection"] = request.deepface_enforce_detection
+            if request.deepface_detector_backend is not None:
+                additional_options["detector_backend"] = request.deepface_detector_backend
+            if request.deepface_align is not None:
+                additional_options["align"] = request.deepface_align
+            if request.deepface_normalization is not None:
+                additional_options["normalization"] = request.deepface_normalization
+        
         result = await service.add_face_from_image(
             image_bytes=image_bytes,
             person_name=request.person_name,
             person_id=person_id,
-            model_name=model_name
+            model_name=model_name,
+            fast_mode=use_fast_mode,
+            **additional_options
         )
 
         if not result or not result.get("success"):
@@ -288,7 +339,7 @@ async def extract_embedding_endpoint(
     normalize: bool = Form(True),
     service = Depends(get_face_recognition_service)
 ) -> JSONResponse:
-    """Extract face embedding from uploaded image - Fixed Version"""
+    """Extract face embedding from uploaded image - ไม่สร้าง database entries"""
     try:
         # Validate inputs
         model_name = validate_model_name(model_name)
@@ -307,44 +358,39 @@ async def extract_embedding_endpoint(
 
         logger.info(f"Extracting embedding from {file.filename} using {model_name}")
 
-        # แก้ไข: ใช้ method ที่เหมาะสมสำหรับ embedding extraction
+        # 🔧 แก้ไข: ใช้วิธีที่ไม่สร้าง database entries
         try:
-            # ใช้ method extract_embedding_only แทน add_face_from_image
-            embedding_result = await service.extract_embedding_only(
-                image_bytes=image_bytes,
-                model_name=model_name,
-                normalize=normalize
-            )
-        except AttributeError:
-            # Fallback: ถ้าไม่มี method extract_embedding_only ให้ใช้วิธีเดิมแต่แก้ไข
-            temp_result = await service.add_face_from_image(
-                image_bytes=image_bytes,
-                person_name="temp_extraction",
-                person_id="temp_extraction",
-                model_name=model_name
-            )
-            
-            if not temp_result or not temp_result.get("success"):
-                error_detail = (
-                    temp_result.get("error", "Failed to extract embedding")
-                    if temp_result
-                    else "Failed to extract embedding"
+            # วิธีที่ 1: ใช้ extract_embedding_only (ถ้ามี)
+            if hasattr(service, 'extract_embedding_only'):
+                embedding_result = await service.extract_embedding_only(
+                    image_bytes=image_bytes,
+                    model_name=model_name,
+                    normalize=normalize
                 )
-                raise HTTPException(status_code=400, detail=error_detail)
-            
-            # แปลงผลลัพธ์ให้เป็นรูปแบบที่ต้องการ
-            full_embedding = temp_result.get("full_embedding", [])
-            embedding_preview = temp_result.get("embedding_preview", [])
-            
-            embedding_result = {
-                "success": True,
-                "embedding": full_embedding if full_embedding else embedding_preview,
-                "full_embedding": full_embedding,
-                "embedding_preview": embedding_preview[:5] if embedding_preview else [],
-                "model_used": temp_result.get("model_used", model_name),
-                "dimension": len(full_embedding) if full_embedding else len(embedding_preview),
-                "normalized": normalize
-            }
+            else:
+                # วิธีที่ 2: ใช้ _extract_embedding_unified โดยตรง (ไม่ผ่าน database)
+                img_np = service._decode_image(image_bytes, "embedding_extraction")
+                if img_np is None:
+                    raise HTTPException(status_code=400, detail="Failed to decode image")
+                
+                embedding_vector = await service._extract_embedding_unified(img_np, model_name)
+                if embedding_vector is None:
+                    raise HTTPException(status_code=400, detail="Failed to extract embedding")
+                
+                embedding_result = {
+                    "success": True,
+                    "embedding": embedding_vector.tolist(),
+                    "full_embedding": embedding_vector.tolist(),
+                    "embedding_preview": embedding_vector[:5].tolist(),
+                    "model_used": model_name,
+                    "dimension": len(embedding_vector),
+                    "normalized": normalize
+                }
+                
+        except Exception as e:
+            logger.error(f"Direct embedding extraction failed: {e}")
+            # 🚨 หลีกเลี่ยงการใช้ add_face_from_image ที่สร้าง temp
+            raise HTTPException(status_code=400, detail=f"Embedding extraction failed: {str(e)}")
 
         if not embedding_result or not embedding_result.get("success"):
             raise HTTPException(status_code=400, detail="Failed to extract embedding")
@@ -357,7 +403,9 @@ async def extract_embedding_endpoint(
             "dimension": embedding_result.get("dimension", 0),
             "full_embedding": embedding_result.get("full_embedding", []),
             "embedding_preview": embedding_result.get("embedding_preview", []),
-            "normalized": normalize
+            "normalized": normalize,
+            "extraction_only": True,  # 🔧 บอกว่าเป็น extraction อย่างเดียว
+            "no_database_entry": True  # 🔧 ไม่สร้าง database entry
         })
 
     except HTTPException:
@@ -804,6 +852,273 @@ async def get_performance_stats(
     except Exception as e:
         logger.error(f"Failed to get performance stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance stats: {str(e)}")
+
+@router.post("/register-multiple")
+async def register_multiple_faces(
+    request: MultipleRegistrationRequest,
+    service = Depends(get_face_recognition_service)
+) -> Dict[str, Any]:
+    """
+    ลงทะเบียนใบหน้าจากหลายภาพ (สำหรับ Real-time Face Registration)
+    """
+    try:
+        start_time = time.time()
+        logger.info(f"🔄 Starting multiple face registration for: {request.full_name}")
+        
+        if len(request.images) == 0:
+            raise HTTPException(status_code=400, detail="No images provided")
+        
+        if len(request.images) > 20:
+            raise HTTPException(status_code=400, detail="Too many images (max 20)")
+        
+        all_embeddings = []
+        successful_images = 0
+        failed_images = 0
+          # ประมวลผลแต่ละภาพ
+        for i, image_base64 in enumerate(request.images):
+            try:
+                logger.info(f"📸 Processing image {i+1}/{len(request.images)}")
+                
+                # Decode base64 image
+                image_data = base64.b64decode(image_base64)
+                nparr = np.frombuffer(image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    logger.warning(f"⚠️ Failed to decode image {i+1}")
+                    failed_images += 1
+                    continue
+                    
+                # Extract embedding using the specified model
+                logger.info(f"🔍 Extracting embedding for image {i+1} using model: {request.model_name}")
+                embedding_start_time = time.time()
+                
+                embedding_result = await service.extract_embedding_only(
+                    image_bytes=cv2.imencode('.jpg', image)[1].tobytes(),
+                    model_name=request.model_name
+                )
+                
+                embedding_time = time.time() - embedding_start_time
+                logger.info(f"⏱️ Embedding extraction took {embedding_time:.3f}s for image {i+1}")
+                
+                if embedding_result and embedding_result.get("success", False):
+                    embedding = embedding_result.get("embedding")
+                    if embedding is not None and len(embedding) > 0:
+                        all_embeddings.append(embedding)
+                        successful_images += 1
+                        logger.info(f"✅ Successfully extracted embedding from image {i+1} (dim: {len(embedding)})")
+                    else:
+                        logger.warning(f"⚠️ Empty embedding from image {i+1}")
+                        failed_images += 1
+                else:
+                    logger.warning(f"⚠️ Failed to extract embedding from image {i+1}: {embedding_result}")
+                    failed_images += 1
+                    
+            except Exception as e:
+                logger.error(f"❌ Error processing image {i+1}: {e}")
+                failed_images += 1
+                continue
+        
+        if len(all_embeddings) == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="No valid embeddings could be extracted from any image"
+            )
+        
+        # คำนวณ average embedding
+        logger.info(f"🧮 Computing average embedding from {len(all_embeddings)} embeddings...")
+        avg_embedding = np.mean(all_embeddings, axis=0)
+        logger.info(f"✅ Average embedding computed (dimension: {len(avg_embedding)})")
+        
+        # สร้าง person_id ถ้าไม่มี
+        person_id = request.employee_id or f"user_{int(time.time())}"
+        
+        # เตรียม metadata
+        metadata = request.metadata or {}
+        metadata.update({
+            "full_name": request.full_name,
+            "employee_id": request.employee_id,
+            "department": request.department,
+            "position": request.position,
+            "registration_date": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "total_images": len(request.images),
+            "successful_images": successful_images,
+            "failed_images": failed_images,
+            "model_used": request.model_name,
+            "embedding_dimension": len(avg_embedding),
+            "registration_type": "multiple_images"
+        })        # เพิ่มใบหน้าเข้า database ผ่าน direct embedding
+        try:
+            # สร้าง FaceEmbedding object
+            from src.ai_services.face_recognition.models import FaceEmbedding, RecognitionModel
+            
+            # Convert model name to RecognitionModel enum
+            model_type = None
+            if request.model_name:
+                model_type = RecognitionModel.from_string(request.model_name)
+            
+            face_embedding = FaceEmbedding(
+                id=str(uuid.uuid4()),
+                person_id=person_id,
+                person_name=request.full_name,
+                vector=avg_embedding,
+                model_type=model_type,
+                quality_score=90.0,  # High quality since it's averaged from multiple images
+                metadata=metadata
+            )
+              # เพิ่มเข้า face_database โดยตรง
+            if person_id not in service.face_database:
+                service.face_database[person_id] = []
+            
+            service.face_database[person_id].append(face_embedding)
+              # Debug: ตรวจสอบสถานะฐานข้อมูลหลังเพิ่มข้อมูล
+            total_people = len(service.face_database)
+            total_embeddings = sum(len(faces) for faces in service.face_database.values())
+            logger.info(f"🗃️ Database status: {total_people} people, {total_embeddings} total embeddings")
+            logger.info(f"🗃️ Added to database - Person ID: {person_id}, Total faces for this person: {len(service.face_database[person_id])}")
+            logger.info(f"🔧 Service instance ID: {id(service)}, Database instance ID: {id(service.face_database)}")
+            
+            logger.info(f"✅ Successfully added face embedding to database for {person_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to add face to database: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to add face to database: {str(e)}"
+            )
+        
+        processing_time = time.time() - start_time
+        
+        logger.info(f"✅ Multiple face registration completed successfully in {processing_time:.2f}s")
+        
+        return {
+            "success": True,
+            "message": "Face registration completed successfully",
+            "user_id": person_id,
+            "person_name": request.full_name,
+            "employee_id": request.employee_id,
+            "processing_stats": {
+                "total_images": len(request.images),
+                "successful_images": successful_images,
+                "failed_images": failed_images,
+                "success_rate": f"{(successful_images/len(request.images)*100):.1f}%",
+                "processing_time": f"{processing_time:.2f}s",
+                "average_time_per_image": f"{processing_time/len(request.images):.2f}s"
+            },
+            "model_info": {
+                "model_name": request.model_name,
+                "embedding_dimension": len(avg_embedding),
+                "total_embeddings_used": len(all_embeddings)
+            },
+            "metadata": metadata
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Multiple face registration failed: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Face registration failed: {str(e)}"
+        )
+
+@router.get("/gallery/info")
+async def get_gallery_info(
+    service = Depends(get_face_recognition_service)
+) -> Dict[str, Any]:
+    """
+    ดึงข้อมูลฐานข้อมูลใบหน้า (Gallery Information)
+    """
+    try:
+        gallery_stats = await service.get_gallery_stats()
+        service_info = service.get_service_info()        
+        return {
+            "success": True,
+            "total_people": gallery_stats.get("total_persons", 0),
+            "total_embeddings": gallery_stats.get("total_faces", 0),
+            "current_model": service_info.get("model_info", {}).get("current_model", "unknown"),            "gallery_stats": gallery_stats,
+            "model_info": service_info.get("model_info", {}),
+            "last_updated": gallery_stats.get("last_updated"),
+            "embedding_dimensions": gallery_stats.get("embedding_dimensions", {}),
+            "people_list": gallery_stats.get("people_list", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get gallery info: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get gallery information: {str(e)}"
+        )
+
+@router.get("/person/{person_id}")
+async def get_person_info(
+    person_id: str,
+    service = Depends(get_face_recognition_service)
+) -> Dict[str, Any]:
+    """
+    ดึงข้อมูลผู้ใช้เฉพาะคนโดยใช้ person_id/UUID
+    Get specific user information by person_id/UUID
+    """
+    try:
+        # Validate person_id
+        person_id = validate_person_id(person_id)
+        
+        # Get the database
+        database = service.face_database
+        
+        if person_id not in database:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Person with ID '{person_id}' not found in database"
+            )
+        
+        # Get person data
+        embeddings_list = database[person_id]
+        
+        if not isinstance(embeddings_list, list) or not embeddings_list:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No valid data found for person '{person_id}'"
+            )
+        
+        # Extract person information
+        first_embedding = embeddings_list[0]
+        person_name = getattr(first_embedding, 'person_name', person_id)
+        
+        # Count embeddings
+        embedding_count = len(embeddings_list)
+        valid_embeddings = 0
+        embedding_details = []
+        
+        for i, emb_obj in enumerate(embeddings_list):
+            if hasattr(emb_obj, 'vector') and emb_obj.vector is not None:
+                valid_embeddings += 1
+                embedding_details.append({
+                    "index": i,
+                    "face_id": getattr(emb_obj, 'face_id', f"face_{i}"),
+                    "vector_shape": emb_obj.vector.shape if hasattr(emb_obj.vector, 'shape') else None,
+                    "created_at": getattr(emb_obj, 'created_at', None)
+                })
+        
+        return {
+            "success": True,
+            "person_id": person_id,
+            "person_name": person_name,
+            "total_embeddings": embedding_count,
+            "valid_embeddings": valid_embeddings,
+            "embedding_details": embedding_details,
+            "found": True,
+            "message": f"User information retrieved successfully for '{person_name}'"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get person info for {person_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve person information: {str(e)}"
+        )
 
 # Export router
 __all__ = ["router"]

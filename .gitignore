@@ -3,6 +3,37 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Model files (ไฟล์โมเดลขนาดใหญ่ - จะโหลดอัตโนมัติใน Docker)
+model/
+*.onnx
+*.pt
+*.pth
+*.h5
+*.pb
+*.tflite
+*.weights
+
+# Test images (รูปภาพทดสอบ)
+test_images/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.gif
+
+# Frontend dependencies และ build files
+projec-final-fronend/node_modules/
+projec-final-fronend/.next/
+projec-final-fronend/out/
+projec-final-fronend/build/
+projec-final-fronend/dist/
+projec-final-fronend/.env.local
+projec-final-fronend/.env.production
+projec-final-fronend/.vercel
+projec-final-fronend/.turbo
+projec-final-fronend/coverage/
+
 # C extensions
 *.so
 

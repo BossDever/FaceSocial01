@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  face-recognition-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: face-recognition-backend:latest
+    container_name: face-recognition-container
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app
+      # Model Management
+      - MODEL_DIR=/app/model
+      - AUTO_DOWNLOAD_MODELS=true
+      - FACE_DETECTION_MODEL_DIR=/app/model/face-detection
+      - FACE_RECOGNITION_MODEL_DIR=/app/model/face-recognition
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src:/app/src
+      - ./model:/app/model:ro
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./test_images:/app/test_images:ro
+      - ./start.py:/app/start.py
+      - ./requirements.txt:/app/requirements.txt:ro
+      - ./api_spec.json:/app/api_spec.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+networks:
+  default:
+    name: face-recognition-network
+    driver: bridge

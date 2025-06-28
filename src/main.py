@@ -12,6 +12,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List
 import asyncio
+from datetime import datetime
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -65,18 +66,36 @@ try:
     from src.api.complete_endpoints import (
         face_detection_router,
         face_recognition_router,
-        face_analysis_router,
-    )    # Import enhanced API routers (with fallback)
+        face_analysis_router,    )    # Import enhanced API routers (with fallback)
     try:
         from src.api.face_recognition import router as face_recognition_enhanced_router
         from src.api.face_detection import router as face_detection_enhanced_router
         from src.api.face_analysis import router as face_analysis_enhanced_router
+        
+        # Import anti-spoofing router with individual error handling
+        try:
+            from src.api.anti_spoofing import router as anti_spoofing_router
+            logger.info("✅ Anti-spoofing router imported successfully")
+        except ImportError as e:
+            logger.warning(f"❌ Anti-spoofing router import failed: {e}")
+            anti_spoofing_router = None
+        
+        # Import age-gender router with individual error handling
+        try:
+            from src.api.age_gender_endpoints import age_gender_router
+            logger.info("✅ Age-gender router imported successfully")
+        except ImportError as e:
+            logger.warning(f"❌ Age-gender router import failed: {e}")
+            age_gender_router = None
+            
     except ImportError as router_error:
-        logger.warning(f"Enhanced routers import failed: {router_error}")
+        logger.warning(f"Core routers import failed: {router_error}")
         # Use fallback routers from complete_endpoints
         face_recognition_enhanced_router = face_recognition_router
         face_detection_enhanced_router = face_detection_router
         face_analysis_enhanced_router = face_analysis_router
+        anti_spoofing_router = None
+        age_gender_router = None
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print(f"Current working directory: {os.getcwd()}")
@@ -327,9 +346,97 @@ app.include_router(face_recognition_enhanced_router, prefix="/api/face-recogniti
 app.include_router(face_detection_enhanced_router, prefix="/api/face-detection", tags=["Face Detection Enhanced"])
 app.include_router(face_analysis_enhanced_router, prefix="/api/face-analysis", tags=["Face Analysis Enhanced"])
 
-@app.get("/", include_in_schema=False)
-async def root_redirect() -> RedirectResponse:
-    """Redirect root to documentation"""
+# Include Fast Face Detection API (Simple YOLOv11m)
+try:
+    from .api_routes.fast_face_detection import router as fast_face_detection_router
+    app.include_router(fast_face_detection_router, prefix="/api/face-detection", tags=["Fast Face Detection"])
+    logger.info("✅ Fast Face Detection API endpoints registered")
+except ImportError as e:
+    logger.warning(f"⚠️ Fast Face Detection API not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Failed to register Fast Face Detection API: {e}")
+
+# Include Optimized Face Detection API (Advanced optimizations)
+try:
+    from .api_routes.optimized_face_detection import router as optimized_face_detection_router
+    app.include_router(optimized_face_detection_router, tags=["Optimized Face Detection"])
+    logger.info("✅ Optimized Face Detection API endpoints registered")
+except ImportError as e:
+    logger.warning(f"⚠️ Optimized Face Detection API not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Failed to register Optimized Face Detection API: {e}")
+
+# Include Anti-Spoofing API
+if anti_spoofing_router is not None:
+    app.include_router(anti_spoofing_router, tags=["Anti-Spoofing"])
+    logger.info("✅ Anti-spoofing API endpoints registered")
+else:
+    logger.warning("⚠️ Anti-spoofing API not available")
+
+# Include Age-Gender API
+if age_gender_router is not None:
+    app.include_router(age_gender_router, tags=["Age-Gender"])
+    logger.info("✅ Age-gender API endpoints registered")
+else:
+    logger.warning("⚠️ Age-gender API not available")
+
+# Include Enhanced Face Validation API
+try:
+    from .api.face_enhanced_validation import router as enhanced_validation_router
+    app.include_router(enhanced_validation_router, tags=["Enhanced Face Validation"])
+    logger.info("✅ Enhanced Face Validation API endpoints registered")
+except ImportError as e:
+    logger.warning(f"⚠️ Enhanced Face Validation API not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Failed to register Enhanced Face Validation API: {e}")
+
+# Add health endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker container monitoring"""
+    try:
+        # Basic health check
+        services_status = {}
+        
+        # Check if services are initialized
+        face_detection_service = getattr(app.state, FACE_DETECTION_SERVICE, None)
+        face_recognition_service = getattr(app.state, FACE_RECOGNITION_SERVICE, None)
+        face_analysis_service = getattr(app.state, FACE_ANALYSIS_SERVICE, None)
+        vram_manager = getattr(app.state, VRAM_MANAGER_SERVICE, None)
+        
+        services_status["face_detection"] = face_detection_service is not None
+        services_status["face_recognition"] = face_recognition_service is not None  
+        services_status["face_analysis"] = face_analysis_service is not None
+        services_status["vram_manager"] = vram_manager is not None
+        
+        # Check if all critical services are running
+        all_services_healthy = all([
+            services_status["face_detection"],
+            services_status["face_recognition"],
+            services_status["vram_manager"]
+        ])
+        
+        return {
+            "status": "healthy" if all_services_healthy else "degraded",
+            "services": services_status,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+# Root endpoint redirect
+@app.get("/")
+async def root():
+    """Redirect root to API documentation"""
     return RedirectResponse(url="/docs")
 
 @app.get("/health", tags=["System"])

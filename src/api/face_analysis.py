@@ -227,31 +227,29 @@ async def extract_embedding_endpoint(
     try:
         # Read and decode image
         image_data = await file.read()
-        image = decode_uploaded_image(image_data)
-
-        # Convert image to bytes for service
+        image = decode_uploaded_image(image_data)        # Convert image to bytes for service
         _, buffer = cv2.imencode('.jpg', image)
         image_bytes = buffer.tobytes()
 
-        # Extract embedding using service method
-        result = await service.add_face_from_image(
+        # Extract embedding using service method (WITHOUT adding to database)
+        result = await service.extract_embedding_only(
             image_bytes=image_bytes,
-            person_name="temp",
-            person_id="temp",
             model_name=model_name
         )
 
         if not result.get('success'):
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=result.get('error', 'Failed to extract embedding')
             )
 
         return JSONResponse(content={
             "success": True,
-            "embedding": result.get('embedding_preview', []),
+            "embedding": result.get('embedding', []),
             "model_used": result.get('model_used', model_name),
-            "vector": result.get('embedding_preview', [])
+            "vector": result.get('embedding', []),
+            "dimension": result.get('dimension', 0),
+            "embedding_preview": result.get('embedding_preview', [])[:5] if result.get('embedding_preview') else []
         })
 
     except HTTPException:

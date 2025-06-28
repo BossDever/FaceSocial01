@@ -261,12 +261,40 @@ async def get_available_recognition_models(
             logger.error(f"🔍 API Debug - Framework detection failed: {e}")
             # Fallback to ONNX models if framework detection fails
             available_frameworks = ["facenet", "adaface", "arcface"]
-        
-        # Format models with more details
+          # Format models with more details - Check actual loaded status
         available_models = []
-        for model_name in available_frameworks:            available_models.append({
+        for model_name in available_frameworks:            # Check if model is actually loaded in the service
+            is_loaded = False
+            try:
+                # Debug: Log service attributes
+                logger.info(f"🔍 Checking loaded status for {model_name}")
+                logger.info(f"🔍 Service has loaded_models: {hasattr(service, 'loaded_models')}")
+                logger.info(f"🔍 Service has models: {hasattr(service, 'models')}")
+                
+                # Try to get model status from service
+                if hasattr(service, 'loaded_models') and service.loaded_models:
+                    is_loaded = model_name in service.loaded_models
+                    logger.info(f"🔍 {model_name} in loaded_models: {is_loaded}")
+                elif hasattr(service, 'models') and service.models:
+                    is_loaded = model_name in service.models and service.models[model_name] is not None
+                    logger.info(f"🔍 {model_name} in models: {is_loaded}")
+                else:
+                    # For framework models, check if they're truly available
+                    if model_name in ["facenet", "adaface", "arcface"]:
+                        is_loaded = True  # ONNX models are pre-loaded
+                    else:
+                        # Framework models - check if they can actually be used
+                        available_frameworks = service.get_available_frameworks()
+                        is_loaded = model_name in available_frameworks
+                    logger.info(f"🔍 {model_name} fallback check: {is_loaded}")
+            except Exception as e:
+                logger.warning(f"Could not check loaded status for {model_name}: {e}")
+                # Default to false for unknown status
+                is_loaded = False
+            
+            available_models.append({
                 "name": model_name,
-                "loaded": model_name in ["facenet", "adaface", "arcface"],  # ONNX models are pre-loaded
+                "loaded": is_loaded,
                 "type": "onnx" if model_name in ["facenet", "adaface", "arcface"] else "framework",
                 "device": "gpu",
                 "embedding_size": 512 if model_name != "dlib" else 128,
@@ -320,13 +348,9 @@ async def extract_embedding_endpoint(
 
         # Convert image to bytes for service
         _, buffer = cv2.imencode('.jpg', image)
-        image_bytes = buffer.tobytes()
-
-        # Extract embedding using service method
-        result = await service.add_face_from_image(
+        image_bytes = buffer.tobytes()        # Extract embedding using service method (WITHOUT adding to database)
+        result = await service.extract_embedding_only(
             image_bytes=image_bytes,
-            person_name="temp",
-            person_id="temp",
             model_name=model_name
         )
 
@@ -334,12 +358,9 @@ async def extract_embedding_endpoint(
             raise HTTPException(
                 status_code=400, 
                 detail=result.get('error', 'Failed to extract embedding')
-            )        # ใช้ full_embedding เป็นหลัก แทนที่จะใช้ embedding_preview
-        full_embedding = result.get("full_embedding", [])
+            )        # ใช้ embedding จาก extract_embedding_only แทน
+        final_embedding = result.get("embedding", [])
         embedding_preview = result.get("embedding_preview", [])
-        
-        # ถ้าไม่มี full_embedding ให้ fallback ไป embedding_preview
-        final_embedding = full_embedding if len(full_embedding) > len(embedding_preview) else embedding_preview
         
         return JSONResponse(content={
             "success": True,
@@ -347,7 +368,7 @@ async def extract_embedding_endpoint(
             "model_used": result.get('model_used', model_name),
             "vector": final_embedding,
             "dimension": len(final_embedding),
-            "full_embedding": full_embedding,
+            "full_embedding": final_embedding,
             "embedding_preview": embedding_preview[:5] if embedding_preview else []
         })
 
@@ -854,3 +875,72 @@ async def get_gallery_stats_endpoint(
     except Exception as e:
         logger.error(f"Failed to get gallery stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get gallery stats: {str(e)}")
+
+@face_recognition_router.get("/face-recognition/person/{person_id}")
+async def get_person_info_endpoint(
+    person_id: str,
+    service = Depends(get_face_recognition_service)
+) -> JSONResponse:
+    """Get specific user information by person_id/UUID"""
+    try:
+        # Validate person_id
+        if not person_id or not person_id.strip():
+            raise HTTPException(status_code=400, detail="Person ID cannot be empty")
+        
+        person_id = person_id.strip()
+        
+        # Get the database
+        database = service.face_database
+        
+        if person_id not in database:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Person with ID '{person_id}' not found in database"
+            )
+        
+        # Get person data
+        embeddings_list = database[person_id]
+        
+        if not isinstance(embeddings_list, list) or not embeddings_list:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No valid data found for person '{person_id}'"
+            )
+        
+        # Extract person information
+        first_embedding = embeddings_list[0]
+        person_name = getattr(first_embedding, 'person_name', person_id)
+        
+        # Count embeddings
+        embedding_count = len(embeddings_list)
+        valid_embeddings = 0
+        embedding_details = []
+        
+        for i, emb_obj in enumerate(embeddings_list):
+            if hasattr(emb_obj, 'vector') and emb_obj.vector is not None:
+                valid_embeddings += 1
+                embedding_details.append({
+                    "index": i,
+                    "face_id": getattr(emb_obj, 'face_id', f"face_{i}"),
+                    "vector_shape": emb_obj.vector.shape if hasattr(emb_obj.vector, 'shape') else None,
+                    "created_at": getattr(emb_obj, 'created_at', None)
+                })
+        
+        result = {
+            "success": True,
+            "person_id": person_id,
+            "person_name": person_name,
+            "total_embeddings": embedding_count,
+            "valid_embeddings": valid_embeddings,
+            "embedding_details": embedding_details,
+            "found": True,
+            "message": f"User information retrieved successfully for '{person_name}'"
+        }
+        
+        return JSONResponse(content=result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get person info for {person_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve person information: {str(e)}")

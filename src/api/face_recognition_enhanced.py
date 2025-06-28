@@ -95,10 +95,8 @@ class FaceRecognitionEnhancedService:
 
         # Performance tracking
         self.stats = ModelPerformanceStats()
-        self.model_stats: Dict[str, Dict[str, Any]] = {}
-
-        # Model configurations
-        self.model_configs: Dict[RecognitionModel, Dict[str, Union[str, tuple, list, int]]] = {
+        self.model_stats: Dict[str, Dict[str, Any]] = {}        # Model configurations
+        self.model_configs: Dict[RecognitionModel, Dict[str, Union[str, tuple, list, int, float]]] = {
             RecognitionModel.FACENET: {
                 "model_path": "model/face-recognition/facenet_vggface2.onnx",
                 "input_size": (160, 160),
@@ -106,6 +104,7 @@ class FaceRecognitionEnhancedService:
                 "std": [128.0, 128.0, 128.0],
                 "embedding_size": 512,
                 "weight": 0.5,  # 50%
+                "optimal_threshold": 0.3,  # จากการทดสอบ optimization
             },
             RecognitionModel.ADAFACE: {
                 "model_path": "model/face-recognition/adaface_ir101.onnx",
@@ -114,6 +113,7 @@ class FaceRecognitionEnhancedService:
                 "std": [127.5, 127.5, 127.5],
                 "embedding_size": 512,
                 "weight": 0.25,  # 25%
+                "optimal_threshold": 0.05,  # จากการทดสอบ optimization (ลดจาก default)
             },
             RecognitionModel.ARCFACE: {
                 "model_path": "model/face-recognition/arcface_r100.onnx",
@@ -122,6 +122,7 @@ class FaceRecognitionEnhancedService:
                 "std": [127.5, 127.5, 127.5],
                 "embedding_size": 512,
                 "weight": 0.25,  # 25%
+                "optimal_threshold": 0.05,  # จากการทดสอบ optimization (ลดจาก default)
             },
         }
 
@@ -900,6 +901,25 @@ class FaceRecognitionEnhancedService:
             
         except Exception as e:
             self.logger.error(f"❌ Error during shutdown: {e}")
+
+    def get_optimal_threshold(self, model_type: RecognitionModel) -> float:
+        """Get optimal threshold for specific model"""
+        if model_type in self.model_configs:
+            return self.model_configs[model_type].get("optimal_threshold", self.config.similarity_threshold)
+        return self.config.similarity_threshold
+
+    def get_model_threshold(self, model_name: str) -> float:
+        """Get optimal threshold for model by name"""
+        try:
+            model_type = RecognitionModel(model_name.lower())
+            return self.get_optimal_threshold(model_type)
+        except ValueError:
+            # Framework models - use default optimal thresholds
+            framework_thresholds = {
+                "deepface": 0.2,
+                "facenet_pytorch": 0.3
+            }
+            return framework_thresholds.get(model_name.lower(), self.config.similarity_threshold)
 
 # Export the enhanced service
 __all__ = ["FaceRecognitionEnhancedService"]

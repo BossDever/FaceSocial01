@@ -1,0 +1,571 @@
+/* Global UI Improvements */
+
+/* Reset และ Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.6;
+  color: #262626;
+  background-color: #f5f5f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ant Design Overrides สำหรับ High Contrast */
+.ant-layout {
+  background-color: #f5f5f5 !important;
+}
+
+.ant-layout-sider {
+  background-color: #ffffff !important;
+  border-right: 1px solid #f0f0f0 !important;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+.ant-layout-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+.ant-layout-content {
+  background-color: #f5f5f5 !important;
+}
+
+/* Menu Improvements */
+.ant-menu {
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.ant-menu-item {
+  color: #595959 !important;
+  margin: 4px 0 !important;
+  border-radius: 8px !important;
+  height: 48px !important;
+  line-height: 48px !important;
+  transition: all 0.3s ease !important;
+  font-weight: 500 !important;
+}
+
+.ant-menu-item:hover {
+  background-color: #f0f0f0 !important;
+  color: #1890ff !important;
+}
+
+.ant-menu-item-selected {
+  background-color: rgba(24, 144, 255, 0.15) !important;
+  color: #1890ff !important;
+  font-weight: 600 !important;
+}
+
+.ant-menu-item-icon {
+  font-size: 18px !important;
+  margin-right: 12px !important;
+}
+
+/* Button Improvements */
+.ant-btn-primary {
+  background-color: #1890ff !important;
+  border-color: #1890ff !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-btn-primary:hover {
+  background-color: #40a9ff !important;
+  border-color: #40a9ff !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+.ant-btn-default {
+  background-color: #ffffff !important;
+  border-color: #d9d9d9 !important;
+  color: #262626 !important;
+  font-weight: 500 !important;
+  border-radius: 8px !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-btn-default:hover {
+  border-color: #1890ff !important;
+  color: #1890ff !important;
+}
+
+.ant-btn-text {
+  color: #595959 !important;
+  font-weight: 500 !important;
+}
+
+.ant-btn-text:hover {
+  color: #1890ff !important;
+  background-color: #f0f0f0 !important;
+}
+
+/* Input Improvements */
+.ant-input,
+.ant-input-affix-wrapper {
+  background-color: #ffffff !important;
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 8px !important;
+  color: #262626 !important;
+  font-size: 14px !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused {
+  border-color: #1890ff !important;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2) !important;
+}
+
+.ant-input::placeholder {
+  color: #8c8c8c !important;
+}
+
+/* Card Improvements */
+.ant-card {
+  background-color: #ffffff !important;
+  border-radius: 12px !important;
+  border: 1px solid #f0f0f0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+  transform: translateY(-2px) !important;
+}
+
+.ant-card-head {
+  border-bottom: 1px solid #f0f0f0 !important;
+  background-color: #ffffff !important;
+}
+
+.ant-card-head-title {
+  color: #262626 !important;
+  font-weight: 600 !important;
+}
+
+/* Avatar Improvements */
+.ant-avatar {
+  background-color: #1890ff !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+/* Badge Improvements */
+.ant-badge {
+  background-color: #ffffff !important;
+}
+
+.ant-badge-count {
+  background-color: #ff4d4f !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Typography Improvements */
+.ant-typography {
+  color: #262626 !important;
+}
+
+.ant-typography h1,
+.ant-typography h2,
+.ant-typography h3,
+.ant-typography h4,
+.ant-typography h5 {
+  color: #262626 !important;
+  font-weight: 600 !important;
+}
+
+/* Dropdown Improvements */
+.ant-dropdown {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid #f0f0f0 !important;
+  background-color: #ffffff !important; /* แก้ไข: เพิ่มพื้นหลังสีขาว */
+}
+
+.ant-dropdown-menu {
+  background-color: #ffffff !important;
+  border-radius: 8px !important;
+  padding: 8px !important;
+}
+
+.ant-dropdown-menu-item {
+  border-radius: 6px !important;
+  margin: 2px 0 !important;
+  color: #262626 !important;
+  transition: all 0.2s ease !important;
+  background-color: #ffffff !important; /* แก้ไข: เพิ่มพื้นหลังสีขาว */
+}
+
+.ant-dropdown-menu-item:hover {
+  background-color: #f0f0f0 !important;
+  color: #1890ff !important;
+}
+
+/* Notification/Popover Improvements */
+.ant-popover {
+  background-color: #ffffff !important;
+}
+
+.ant-popover-content {
+  background-color: #ffffff !important;
+}
+
+.ant-popover-inner {
+  background-color: #ffffff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+.ant-popover-inner-content {
+  background-color: #ffffff !important;
+  color: #262626 !important;
+}
+
+.ant-popover-arrow {
+  border-color: #ffffff !important;
+}
+
+.ant-popover-arrow:before {
+  background-color: #ffffff !important;
+}
+/* Modal Improvements */
+.ant-modal {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+.ant-modal-content {
+  border-radius: 12px !important;
+  background-color: #ffffff !important;
+}
+
+.ant-modal-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.ant-modal-title {
+  color: #262626 !important;
+  font-weight: 600 !important;
+}
+
+/* List Improvements */
+.ant-list-item {
+  border-bottom: 1px solid #f0f0f0 !important;
+  padding: 16px !important;
+  background-color: #ffffff !important;
+  border: 1px solid #f0f0f0 !important;
+  border-radius: 8px !important;
+  margin-bottom: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-list-item:hover {
+  background-color: #f9f9f9 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  border-color: #d9d9d9 !important;
+}
+
+.ant-list-item-meta {
+  background-color: #ffffff !important;
+}
+
+.ant-list-item-meta-content {
+  background-color: #ffffff !important;
+}
+
+.ant-list-item-action {
+  background-color: #ffffff !important;
+}
+
+/* Spin Improvements */
+.ant-spin-dot-item {
+  background-color: #1890ff !important;
+}
+
+/* Empty State Improvements */
+.ant-empty-description {
+  color: #8c8c8c !important;
+}
+
+/* Notification Improvements */
+.ant-message {
+  z-index: 9999 !important;
+}
+
+.ant-message-notice {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Form Improvements */
+.ant-form-item-label > label {
+  color: #262626 !important;
+  font-weight: 500 !important;
+}
+
+.ant-form-item-explain-error {
+  color: #ff4d4f !important;
+  font-weight: 500 !important;
+}
+
+/* Select Improvements */
+.ant-select {
+  border-radius: 8px !important;
+}
+
+.ant-select-selector {
+  background-color: #ffffff !important;
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 8px !important;
+  color: #262626 !important;
+}
+
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: #1890ff !important;
+}
+
+.ant-select-focused .ant-select-selector {
+  border-color: #1890ff !important;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2) !important;
+}
+
+/* Tooltip Improvements */
+.ant-tooltip {
+  z-index: 9999 !important;
+}
+
+.ant-tooltip-inner {
+  background-color: #262626 !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+}
+
+/* Divider Improvements */
+.ant-divider {
+  border-color: #f0f0f0 !important;
+}
+
+/* Switch Improvements */
+.ant-switch-checked {
+  background-color: #1890ff !important;
+}
+
+/* Progress Improvements */
+.ant-progress-bg {
+  background-color: #1890ff !important;
+}
+
+/* Tag Improvements */
+.ant-tag {
+  border-radius: 16px !important;
+  border: 1px solid #f0f0f0 !important;
+  background-color: #f9f9f9 !important;
+  color: #595959 !important;
+  font-weight: 500 !important;
+}
+
+/* Upload Improvements */
+.ant-upload-dragger {
+  background-color: #fafafa !important;
+  border: 2px dashed #d9d9d9 !important;
+  border-radius: 8px !important;
+}
+
+.ant-upload-dragger:hover {
+  border-color: #1890ff !important;
+  background-color: #f0f9ff !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* Animation Utilities */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scale {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  40%, 43% {
+    transform: translate3d(0, -30px, 0);
+  }
+  70% {
+    transform: translate3d(0, -15px, 0);
+  }
+  90% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Utility Classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+.scale-in {
+  animation: scale 0.2s ease-out;
+}
+
+.bounce-in {
+  animation: bounce 0.5s ease-in-out;
+}
+
+/* Responsive Utilities */
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    position: fixed !important;
+    z-index: 999 !important;
+    height: 100vh !important;
+  }
+  
+  .ant-layout-content {
+    margin-left: 0 !important;
+  }
+  
+  .ant-card {
+    border-radius: 8px !important;
+    margin: 8px !important;
+  }
+  
+  .ant-btn {
+    height: 36px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  .ant-btn-primary {
+    background-color: #000000 !important;
+    border-color: #000000 !important;
+  }
+  
+  .ant-menu-item-selected {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+  }
+  
+  .ant-input:focus,
+  .ant-input-affix-wrapper:focus {
+    border-color: #000000 !important;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2) !important;
+  }
+}
+
+/* Dark Mode Support (เตรียมไว้สำหรับอนาคต) */
+@media (prefers-color-scheme: dark) {
+  /* จะเพิ่มใน version ต่อไป */
+}
+
+/* Print Styles */
+@media print {
+  .ant-layout-sider,
+  .ant-btn,
+  .ant-pagination {
+    display: none !important;
+  }
+  
+  .ant-layout-content {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .ant-card {
+    box-shadow: none !important;
+    border: 1px solid #000000 !important;
+  }
+}

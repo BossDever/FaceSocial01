@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Login - Improved (Working Version)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #fileInput {
+            margin: 15px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .image-preview {
+            max-width: 300px;
+            max-height: 300px;
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            border: 1px solid #e9ecef;
+        }
+        .working-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #28a745;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .saved-images-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .saved-image-item {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+        .saved-image-item:hover {
+            border-color: #007bff;
+            box-shadow: 0 4px 8px rgba(0,123,255,0.2);
+        }
+        .saved-image-item.selected {
+            border-color: #28a745;
+            background-color: #e8f5e8;
+        }
+        .saved-image-item img {
+            width: 100%;
+            max-width: 150px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        .saved-image-item .image-info {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>    <div class="container">
+        <h1>🔐 Face Login System - เวอร์ชันปรับปรุง</h1>
+        <p><span class="working-indicator"></span><strong>สถานะ:</strong> ใช้ endpoint ที่ใช้งานได้ <code>/api/face-analysis/analyze</code></p>
+          <div class="test-section" style="background: #d4edda; border-color: #c3e6cb;">
+            <h2>✅ ระบบพร้อมใช้งาน - มีข้อมูล admin01</h2>
+            <div style="font-size: 14px; line-height: 1.6;">
+                <p><strong>🎯 บัญชีทดสอบที่พร้อมใช้งาน:</strong></p>
+                <ul>
+                    <li><strong>👤 Username:</strong> admin01</li>
+                    <li><strong>🔑 Password:</strong> admin01</li>
+                    <li><strong>📧 Email:</strong> admin@email.com</li>
+                    <li><strong>✅ Face Login:</strong> พร้อมใช้งาน (ลงทะเบียนแล้ว)</li>
+                </ul>
+                
+                <p><strong>🚀 วิธีทดสอบเร็ว:</strong></p>
+                <ol>
+                    <li>กดปุ่ม <strong>"👤 ใช้รูป Admin ตัวอย่าง"</strong> ด้านล่าง</li>
+                    <li>กดปุ่ม <strong>"🔑 ทดสอบ Face Login จริง"</strong></li>
+                    <li>ดูผลลัพธ์การเข้าสู่ระบบ</li>
+                </ol>
+
+                <p><strong>🔗 การทดสอบแบบเต็ม:</strong></p>
+                <ul>
+                    <li><strong>Password Login:</strong> <a href="/login" target="_blank">http://localhost:3000/login</a></li>
+                    <li><strong>Face Login:</strong> ใช้หน้านี้หรือ <a href="/login" target="_blank">หน้า login หลัก</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section" style="background: #fff3cd; border-color: #ffeaa7;">
+            <h2>📋 วิธีการทดสอบ</h2><ol style="font-size: 14px; line-height: 1.6;">
+                <li><strong>ลงทะเบียนใบหน้า:</strong> ไปที่ <a href="/register" target="_blank">หน้าลงทะเบียน</a> และทำการสแกนใบหน้า 15 ครั้ง (ภาพจะถูกบันทึกอัตโนมัติ)</li>
+                <li><strong>ตรวจสอบระบบ:</strong> กดปุ่ม "👥 ดู Users ในระบบ" เพื่อดูว่ามี users อะไรบ้างในฐานข้อมูล</li>
+                <li><strong>ตรวจสอบ Face Gallery:</strong> กดปุ่ม "🔗 ตรวจสอบ Face-User Mapping" เพื่อดูการเชื่อมต่อ</li>
+                <li><strong>ทดสอบด้วยภาพที่บันทึกไว้:</strong> กดปุ่ม "📁 ใช้ภาพที่บันทึกไว้" เพื่อใช้ภาพ cropped จากการลงทะเบียน</li>
+                <li><strong>อัปโหลดรูปใหม่:</strong> หรือเลือกรูปใหม่ที่มีใบหน้าชัดเจน</li>
+                <li><strong>ทดสอบ Face Recognition:</strong> กดปุ่ม "🔍 Test Face Recognition" เพื่อดูว่าระบบจดจำใบหน้าได้หรือไม่</li>
+                <li><strong>ทดสอบ Login จริง:</strong> กดปุ่ม "🔑 ทดสอบ Face Login จริง" เพื่อทดสอบการเข้าสู่ระบบแบบจริง</li>
+            </ol>
+            <p><strong>⚠️ หมายเหตุ:</strong> หากระบบจดจำได้เป็น "temp" แสดงว่าต้องมี user ที่มี ID = "temp" ในฐานข้อมูล</p>
+            <p><strong>📁 ภาพที่บันทึก:</strong> ภาพ cropped faces จะถูกเก็บที่ <code>registration-faces/current-registration/</code></p>
+        </div>
+        
+        <div class="test-section">
+            <h2>🎯 Face Recognition Test</h2>
+            <p>Upload an image to test face recognition using the verified working endpoint.</p>
+            
+            <input type="file" id="fileInput" accept="image/*">
+            <img id="imagePreview" class="image-preview" style="display: none;">
+            
+            <div>
+                <button onclick="testFaceRecognition()" id="testBtn">🔍 Test Face Recognition</button>
+                <button onclick="testDirectAPI()" id="apiBtn">🔧 Test Direct API</button>
+                <button onclick="clearResults()">🗑️ Clear Results</button>
+            </div>
+            
+            <div id="recognitionResult"></div>
+        </div>        <div class="test-section">
+            <h2>🔐 Test Face Login with Database</h2>
+            <p>อัปโหลดรูปเพื่อทดสอบการเข้าสู่ระบบจริงกับ Database</p>
+            
+            <input type="file" id="loginFileInput" accept="image/*">
+            <img id="loginImagePreview" class="image-preview" style="display: none;">            <div>
+                <button onclick="testRealFaceLogin()" id="realLoginBtn">🔑 ทดสอบ Face Login จริง</button>
+                <button onclick="loadAdminSample()" id="adminSampleBtn" style="background-color: #28a745; color: white;">👤 ใช้รูป Admin ตัวอย่าง</button>
+                <button onclick="checkDatabaseUsers()">👥 ดู Users ในระบบ</button>
+                <button onclick="checkFaceGalleryMapping()">🔗 ตรวจสอบ Face-User Mapping</button>
+                <button onclick="loadSavedFaceImages()">📁 ใช้ภาพที่บันทึกไว้</button>
+            </div>
+              <div id="realLoginResult"></div>
+        </div>
+
+        <div class="test-section" id="savedImagesSection" style="display: none;">
+            <h2>📁 ภาพใบหน้าที่บันทึกไว้จากการลงทะเบียน</h2>
+            <p>เลือกภาพที่ crop แล้วจากการลงทะเบียนเพื่อทดสอบการเข้าสู่ระบบ</p>
+            <div id="savedImagesList" class="saved-images-grid"></div>
+            <div>
+                <button onclick="testSelectedImage()" id="testSelectedBtn" style="display: none;">🔍 ทดสอบภาพที่เลือก</button>
+                <button onclick="hideSavedImages()">❌ ปิด</button>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📊 System Status</h2>
+            <button onclick="checkGalleryStatus()">👥 Check Gallery</button>
+            <button onclick="checkAPIHealth()">🏥 Check API Health</button>
+            <div id="statusResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Technical Details</h2>
+            <div id="technicalDetails">
+                <p><strong>Working Configuration:</strong></p>
+                <ul>
+                    <li><strong>Endpoint:</strong> <code>POST /api/face-analysis/analyze</code></li>
+                    <li><strong>Method:</strong> File upload (multipart/form-data)</li>
+                    <li><strong>Mode:</strong> full_analysis</li>
+                    <li><strong>Model:</strong> YOLOv9c + FaceNet</li>
+                    <li><strong>Success Rate:</strong> 100% detection, 63.9% recognition confidence</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAnalysis = null;        // Preview uploaded image for login test
+        document.getElementById('loginFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('loginImagePreview');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Test real face login with database
+        async function testRealFaceLogin() {
+            const fileInput = document.getElementById('loginFileInput');
+            const resultDiv = document.getElementById('realLoginResult');
+            const loginBtn = document.getElementById('realLoginBtn');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="error">❌ กรุณาเลือกรูปภาพก่อน!</div>';
+                return;
+            }
+
+            try {
+                loginBtn.disabled = true;
+                loginBtn.textContent = '🔄 กำลังเข้าสู่ระบบ...';
+                resultDiv.innerHTML = '<div class="info">🔄 กำลังทดสอบ Face Login กับ Database...</div>';
+                
+                const file = fileInput.files[0];
+                
+                // Convert to base64
+                const base64Image = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.readAsDataURL(file);
+                });
+
+                const startTime = Date.now();
+                
+                // Call the real login API
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        faceImageBase64: base64Image,
+                        loginMethod: 'face'
+                    })
+                });
+
+                const processingTime = Date.now() - startTime;
+                const result = await response.json();
+
+                if (result.success) {
+                    displayLoginSuccess(result, processingTime);
+                } else {
+                    displayLoginFailure(result, processingTime, response.status);
+                }
+
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ เกิดข้อผิดพลาด</h4>
+                        <p>${error.message}</p>
+                        <p>ตรวจสอบว่า Next.js server กำลังทำงานที่ port 3000</p>
+                    </div>
+                `;
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '🔑 ทดสอบ Face Login จริง';
+            }        }
+
+        // Load admin sample image
+        async function loadAdminSample() {
+            try {
+                const response = await fetch('/admin_face_sample.jpg');
+                if (!response.ok) {
+                    throw new Error('ไม่สามารถโหลดรูปตัวอย่างได้');
+                }
+                
+                const blob = await response.blob();
+                const file = new File([blob], 'admin_face_sample.jpg', { type: 'image/jpeg' });
+                
+                // Update file input
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                const fileInput = document.getElementById('loginFileInput');
+                fileInput.files = dataTransfer.files;
+                
+                // Show preview
+                const loginImagePreview = document.getElementById('loginImagePreview');
+                loginImagePreview.src = URL.createObjectURL(file);
+                loginImagePreview.style.display = 'block';
+                
+                // Update result
+                const resultDiv = document.getElementById('realLoginResult');
+                resultDiv.innerHTML = '<div class="info">✅ โหลดรูปตัวอย่าง admin01 เรียบร้อยแล้ว กดปุ่ม "🔑 ทดสอบ Face Login จริง" เพื่อทดสอบ</div>';
+                
+            } catch (error) {
+                const resultDiv = document.getElementById('realLoginResult');
+                resultDiv.innerHTML = `<div class="error">❌ ไม่สามารถโหลดรูปตัวอย่างได้: ${error.message}</div>`;
+            }
+        }
+
+        function displayLoginSuccess(result, processingTime) {
+            const resultDiv = document.getElementById('realLoginResult');
+            const userData = result.data.user;
+            
+            resultDiv.innerHTML = `
+                <div class="success">
+                    <h4>🎉 เข้าสู่ระบบสำเร็จ!</h4>
+                    
+                    <div class="stats">
+                        <div class="stat-box">
+                            <div class="stat-value">${processingTime}ms</div>
+                            <div class="stat-label">เวลาประมวลผล</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${result.data.confidencePercentage || 'N/A'}</div>
+                            <div class="stat-label">ความมั่นใจ</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${result.data.loginMethod}</div>
+                            <div class="stat-label">วิธีเข้าสู่ระบบ</div>
+                        </div>
+                    </div>
+                    
+                    <h5>👤 ข้อมูลผู้ใช้ที่แมทช์:</h5>
+                    <div style="background: #e8f5e8; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                        <strong>🆔 User ID:</strong> ${userData.id}<br>
+                        <strong>📧 Email:</strong> ${userData.email}<br>
+                        <strong>👤 Username:</strong> ${userData.username}<br>
+                        <strong>🏷️ ชื่อ:</strong> ${userData.fullName}<br>
+                        <strong>📅 สร้างบัญชีเมื่อ:</strong> ${new Date(userData.createdAt).toLocaleDateString('th-TH')}<br>
+                        <strong>🕐 เข้าสู่ระบบล่าสุด:</strong> ${userData.lastLoginAt ? new Date(userData.lastLoginAt).toLocaleString('th-TH') : 'ครั้งแรก'}<br>
+                        <strong>✅ สถานะ:</strong> ${userData.isActive ? 'ใช้งานได้' : 'ระงับการใช้งาน'}
+                    </div>
+                    
+                    <h5>🔐 Session Information:</h5>
+                    <ul>
+                        <li><strong>Token:</strong> ${result.data.token.substring(0, 30)}...</li>
+                        <li><strong>Message:</strong> ${result.message}</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        function displayLoginFailure(result, processingTime, statusCode) {
+            const resultDiv = document.getElementById('realLoginResult');
+            
+            let errorType = 'ไม่ทราบสาเหตุ';
+            let recommendations = [];
+            
+            if (statusCode === 400) {
+                errorType = 'ข้อมูลไม่ถูกต้อง';
+                recommendations.push('ตรวจสอบว่ารูปภาพชัดเจนและมีใบหน้า');
+                recommendations.push('ลองถ่ายรูปใหม่ในที่ที่มีแสงดี');
+            } else if (statusCode === 401) {
+                errorType = 'ไม่พบใบหน้าที่ตรงกัน';
+                recommendations.push('ใบหน้าอาจยังไม่ได้ลงทะเบียนในระบบ');
+                recommendations.push('ลองใช้รูปอื่นหรือลงทะเบียนใบหน้าใหม่');
+            } else if (statusCode === 404) {
+                errorType = 'ไม่พบข้อมูลผู้ใช้';
+                recommendations.push('User ที่จดจำได้อาจไม่มีในฐานข้อมูล');
+            } else if (statusCode === 500) {
+                errorType = 'ข้อผิดพลาดของเซิร์ฟเวอร์';
+                recommendations.push('ตรวจสอบว่า Face Recognition API กำลังทำงาน');
+                recommendations.push('ตรวจสอบ log ของเซิร์ฟเวอร์');
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="error">
+                    <h4>❌ เข้าสู่ระบบไม่สำเร็จ</h4>
+                    
+                    <div class="stats">
+                        <div class="stat-box">
+                            <div class="stat-value">${processingTime}ms</div>
+                            <div class="stat-label">เวลาประมวลผล</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${statusCode}</div>
+                            <div class="stat-label">Status Code</div>
+                        </div>
+                    </div>
+                    
+                    <p><strong>🚨 ประเภทข้อผิดพลาด:</strong> ${errorType}</p>
+                    <p><strong>💬 ข้อความ:</strong> ${result.message}</p>
+                    
+                    <h5>💡 คำแนะนำ:</h5>
+                    <ul>
+                        ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }        // Check database users
+        async function checkDatabaseUsers() {
+            const resultDiv = document.getElementById('realLoginResult');
+            resultDiv.innerHTML = '<div class="info">🔄 กำลังตรวจสอบ Users ในฐานข้อมูล...</div>';
+
+            try {
+                const response = await fetch('/api/users/list');
+                const result = await response.json();
+
+                if (result.success) {
+                    const users = result.data.users;
+                    const stats = result.data.statistics;
+                    
+                    let html = `
+                        <div class="success">
+                            <h4>� ข้อมูล Users ในฐานข้อมูล</h4>
+                            
+                            <div class="stats">
+                                <div class="stat-box">
+                                    <div class="stat-value">${stats.totalUsers}</div>
+                                    <div class="stat-label">Users ทั้งหมด</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-value">${stats.activeUsers}</div>
+                                    <div class="stat-label">Users ที่ใช้งานได้</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-value">${stats.usersWithFaceEmbeddings}</div>
+                                    <div class="stat-label">มี Face Data</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-value">${stats.recentLogins}</div>
+                                    <div class="stat-label">Login ล่าสุด (7 วัน)</div>
+                                </div>
+                            </div>
+                            
+                            <h5>📋 รายชื่อ Users:</h5>
+                            <div style="max-height: 400px; overflow-y: auto;">
+                    `;
+                    
+                    if (users.length > 0) {
+                        users.forEach((user, index) => {
+                            const statusColor = user.isActive ? '#28a745' : '#dc3545';
+                            const faceIcon = user.hasFaceEmbeddings ? '👤' : '❌';
+                            html += `
+                                <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; margin: 5px 0;">
+                                    <strong>${index + 1}. ${user.fullName}</strong>
+                                    <br>
+                                    <small>
+                                        <strong>ID:</strong> ${user.id} | 
+                                        <strong>Email:</strong> ${user.email} | 
+                                        <strong>Username:</strong> ${user.username}
+                                        <br>
+                                        <span style="color: ${statusColor};">
+                                            <strong>สถานะ:</strong> ${user.isActive ? '✅ ใช้งานได้' : '❌ ระงับ'}
+                                        </span> |
+                                        <strong>Face Data:</strong> ${faceIcon} ${user.hasFaceEmbeddings ? `(${user.faceEmbeddingCount} embeddings)` : 'ไม่มี'}
+                                        <br>
+                                        <strong>สร้าง:</strong> ${new Date(user.createdAt).toLocaleDateString('th-TH')} |
+                                        <strong>Login ล่าสุด:</strong> ${user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString('th-TH') : 'ยังไม่เคย'}
+                                    </small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<p>ไม่มี Users ในฐานข้อมูล</p>';
+                    }
+                    
+                    html += `
+                            </div>
+                            
+                            <h5>💡 คำแนะนำสำหรับการทดสอบ:</h5>
+                            <ul>
+                                <li>ผู้ใช้ที่มี Face Data จะสามารถเข้าสู่ระบบด้วยใบหน้าได้</li>
+                                <li>หาก Face Recognition API จดจำได้เป็น "temp" ให้ลองหา user ที่มี ID หรือ username = "temp"</li>
+                                <li>ตรวจสอบว่า user ที่ต้องการทดสอบมีสถานะ "ใช้งานได้"</li>
+                            </ul>
+                        </div>
+                    `;
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ ไม่สามารถดึงข้อมูล Users ได้</h4>
+                            <p>${result.message}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ เกิดข้อผิดพลาดในการเชื่อมต่อ</h4>
+                        <p>${error.message}</p>
+                        <p>ตรวจสอบว่า Next.js server กำลังทำงานที่ port 3000</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Preview uploaded image
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('imagePreview');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Test face recognition using working endpoint
+        async function testFaceRecognition() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('recognitionResult');
+            const testBtn = document.getElementById('testBtn');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="error">❌ Please select an image first!</div>';
+                return;
+            }
+
+            try {
+                testBtn.disabled = true;
+                testBtn.textContent = '🔄 Processing...';
+                resultDiv.innerHTML = '<div class="info">🔄 Analyzing face using working endpoint...</div>';
+                
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('mode', 'full_analysis');
+
+                const startTime = Date.now();
+                const response = await fetch('http://localhost:8080/api/face-analysis/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const processingTime = Date.now() - startTime;
+                const result = await response.json();
+                currentAnalysis = result;
+
+                if (response.ok && result.success && result.faces && result.faces.length > 0) {
+                    displaySuccessfulRecognition(result, processingTime);
+                } else if (response.ok && result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ No Faces Detected</h4>
+                            <p>The image was processed successfully but no faces were found.</p>
+                            <p><strong>Processing Time:</strong> ${processingTime}ms</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ API Error</h4>
+                            <p><strong>Status:</strong> ${response.status}</p>
+                            <p><strong>Message:</strong> ${result.message || 'Unknown error'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Network Error</h4>
+                        <p>${error.message}</p>
+                        <p>Make sure the Face Recognition API is running on localhost:8080</p>
+                    </div>
+                `;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '🔍 Test Face Recognition';
+            }
+        }
+
+        function displaySuccessfulRecognition(result, processingTime) {
+            const resultDiv = document.getElementById('recognitionResult');
+            const face = result.faces[0];
+            
+            let html = `
+                <div class="success">
+                    <h4>✅ Face Recognition Successful!</h4>
+                    
+                    <div class="stats">
+                        <div class="stat-box">
+                            <div class="stat-value">${result.faces.length}</div>
+                            <div class="stat-label">Faces Detected</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${(face.detection_confidence * 100).toFixed(1)}%</div>
+                            <div class="stat-label">Detection Confidence</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${processingTime}ms</div>
+                            <div class="stat-label">Processing Time</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${face.quality_score}%</div>
+                            <div class="stat-label">Face Quality</div>
+                        </div>
+                    </div>
+                    
+                    <h5>🎯 Recognition Results:</h5>
+            `;
+
+            if (face.has_identity && face.matches && face.matches.length > 0) {
+                html += `
+                    <div style="background: #e8f5e8; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                        <strong>✅ Identity Found:</strong> ${face.identity}<br>
+                        <strong>🔍 Recognition Confidence:</strong> ${(face.recognition_confidence * 100).toFixed(1)}%<br>
+                        <strong>🏆 Best Match:</strong> ${face.best_match.person_name} (${(face.best_match.confidence * 100).toFixed(1)}%)<br>
+                        <strong>📊 Match Quality:</strong> ${face.best_match.match_quality}<br>
+                        <strong>🔬 Comparison Method:</strong> ${face.best_match.comparison_method}
+                    </div>
+                `;
+                
+                if (face.matches.length > 1) {
+                    html += '<h6>🔍 All Matches:</h6><ul>';
+                    face.matches.forEach((match, i) => {
+                        html += `<li>${match.person_name}: ${(match.confidence * 100).toFixed(1)}% confidence</li>`;
+                    });
+                    html += '</ul>';
+                }
+            } else {
+                html += `
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                        <strong>⚠️ No Identity Match:</strong> Face detected but no matching identity found in the gallery.
+                    </div>
+                `;
+            }
+
+            html += `
+                    <h5>📈 Performance Metrics:</h5>
+                    <ul>
+                        <li><strong>Detection Time:</strong> ${(result.performance.detection_time * 1000).toFixed(1)}ms</li>
+                        <li><strong>Recognition Time:</strong> ${(result.performance.recognition_time * 1000).toFixed(1)}ms</li>
+                        <li><strong>Total Processing:</strong> ${(result.performance.total_time * 1000).toFixed(1)}ms</li>
+                        <li><strong>Faces/Second:</strong> ${result.performance.faces_per_second.toFixed(1)}</li>
+                    </ul>
+                    
+                    <h5>🤖 Models Used:</h5>
+                    <ul>
+                        <li><strong>Detection:</strong> ${result.models_used.detection_model}</li>
+                        <li><strong>Recognition:</strong> ${result.models_used.recognition_model}</li>
+                    </ul>
+                </div>
+            `;
+
+            resultDiv.innerHTML = html;
+        }
+
+        // Test direct API call with raw response
+        async function testDirectAPI() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('recognitionResult');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="error">❌ Please select an image first!</div>';
+                return;
+            }
+
+            try {
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('mode', 'full_analysis');
+
+                const response = await fetch('http://localhost:8080/api/face-analysis/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="info">
+                        <h4>🔧 Raw API Response</h4>
+                        <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                        <p><strong>Content-Type:</strong> ${response.headers.get('content-type')}</p>
+                        <pre>${JSON.stringify(result, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ API Test Failed</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Check gallery status
+        async function checkGalleryStatus() {
+            const resultDiv = document.getElementById('statusResult');
+            resultDiv.innerHTML = '<div class="info">🔄 Checking gallery...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8080/api/face-recognition/gallery/get');
+                const result = await response.json();
+
+                if (response.ok && result.gallery) {
+                    const personCount = Object.keys(result.gallery).length;
+                    let html = `
+                        <div class="success">
+                            <h4>✅ Gallery Status</h4>
+                            <p><strong>Registered Persons:</strong> ${personCount}</p>
+                    `;
+
+                    if (personCount > 0) {
+                        html += '<h5>👥 Registered Identities:</h5><ul>';
+                        Object.entries(result.gallery).forEach(([personId, data]) => {
+                            const embeddingCount = data.embeddings ? data.embeddings.length : 0;
+                            html += `<li><strong>${personId}:</strong> ${embeddingCount} embeddings</li>`;
+                        });
+                        html += '</ul>';
+                    }
+
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Gallery Error</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Could not retrieve gallery information</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Gallery Check Failed</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Check API health
+        async function checkAPIHealth() {
+            const resultDiv = document.getElementById('statusResult');
+            resultDiv.innerHTML = '<div class="info">🔄 Checking API health...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                const result = await response.json();
+
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ API Health Check</h4>
+                        <pre>${JSON.stringify(result, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Health Check Failed</h4>
+                        <p>${error.message}</p>
+                        <p>Make sure the API is running on http://localhost:8080</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Clear results
+        function clearResults() {
+            document.getElementById('recognitionResult').innerHTML = '';
+            document.getElementById('statusResult').innerHTML = '';
+            currentAnalysis = null;        }
+
+        // Check face gallery mapping
+        async function checkFaceGalleryMapping() {
+            const resultDiv = document.getElementById('realLoginResult');
+            resultDiv.innerHTML = '<div class="info">🔄 กำลังตรวจสอบการเชื่อมต่อระหว่าง Face Gallery และ Database...</div>';
+
+            try {
+                // Get gallery data
+                const galleryResponse = await fetch('http://localhost:8080/api/face-recognition/gallery/get');
+                const galleryData = await galleryResponse.json();
+
+                // Get database users
+                const usersResponse = await fetch('/api/users/list');
+                const usersData = await usersResponse.json();
+
+                if (galleryData.gallery && usersData.success) {
+                    const gallery = galleryData.gallery;
+                    const users = usersData.data.users;
+                    
+                    let html = `
+                        <div class="info">
+                            <h4>🔗 Face Gallery และ Database Mapping</h4>
+                            
+                            <h5>🎭 Face Gallery (จาก Face Recognition API):</h5>
+                            <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin: 10px 0;">
+                    `;
+                    
+                    const galleryPersons = Object.keys(gallery);
+                    if (galleryPersons.length > 0) {
+                        galleryPersons.forEach(personId => {
+                            const embeddings = gallery[personId].embeddings || [];
+                            html += `
+                                <div style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px;">
+                                    <strong>Person ID:</strong> ${personId}<br>
+                                    <strong>Embeddings:</strong> ${embeddings.length} vectors
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<p>ไม่มีข้อมูลใน Face Gallery</p>';
+                    }
+                    
+                    html += `
+                            </div>
+                            
+                            <h5>👥 Database Users (จาก PostgreSQL):</h5>
+                            <div style="background: #e8f5e8; padding: 10px; border-radius: 6px; margin: 10px 0;">
+                    `;
+                    
+                    if (users.length > 0) {
+                        users.forEach(user => {
+                            const matchIcon = galleryPersons.includes(user.id) ? '✅' : '❌';
+                            html += `
+                                <div style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px;">
+                                    ${matchIcon} <strong>${user.fullName}</strong> (${user.id})<br>
+                                    <small>Face Embeddings: ${user.faceEmbeddingCount}, Active: ${user.isActive ? 'Yes' : 'No'}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<p>ไม่มี Users ในฐานข้อมูล</p>';
+                    }
+                    
+                    html += `
+                            </div>
+                            
+                            <h5>🔍 การวิเคราะห์:</h5>
+                            <ul>
+                    `;
+                    
+                    // Analysis
+                    const matchedUsers = users.filter(u => galleryPersons.includes(u.id));
+                    const unmatchedGallery = galleryPersons.filter(p => !users.some(u => u.id === p));
+                    const unmatchedUsers = users.filter(u => !galleryPersons.includes(u.id));
+                    
+                    html += `
+                                <li><strong>Users ที่มีทั้งใน Gallery และ Database:</strong> ${matchedUsers.length} คน</li>
+                                <li><strong>Face Gallery ที่ไม่มี User ใน Database:</strong> ${unmatchedGallery.length} entries</li>
+                                <li><strong>Database Users ที่ไม่มีใน Face Gallery:</strong> ${unmatchedUsers.length} คน</li>
+                            </ul>
+                            
+                            <h5>💡 คำแนะนำ:</h5>
+                            <ul>
+                                <li>หาก Face Recognition พบ "${galleryPersons[0] || 'temp'}" ให้ตรวจสอบว่ามี User ID นี้ใน Database หรือไม่</li>
+                                <li>หาก User ใน Database ไม่มีใน Face Gallery ให้ลงทะเบียนใบหน้าใหม่</li>
+                                <li>หาก Gallery มี ID ที่ไม่ตรงกับ Database ให้ปรับปรุงข้อมูล</li>
+                            </ul>
+                        </div>
+                    `;
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ ไม่สามารถดึงข้อมูลได้</h4>
+                            <p>Gallery Success: ${!!galleryData.gallery}</p>
+                            <p>Users Success: ${usersData.success}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ เกิดข้อผิดพลาดในการตรวจสอบ</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }        }
+
+        let selectedSavedImage = null;
+
+        // Load saved face images from registration
+        async function loadSavedFaceImages() {
+            const savedImagesSection = document.getElementById('savedImagesSection');
+            const savedImagesList = document.getElementById('savedImagesList');
+            
+            savedImagesList.innerHTML = '<div class="info">🔄 กำลังค้นหาภาพที่บันทึกไว้...</div>';
+            savedImagesSection.style.display = 'block';
+
+            try {
+                // Check if registration-faces directory exists and list files
+                const response = await fetch('/api/list-saved-faces');
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    displaySavedImages(result.images || []);
+                } else {
+                    // If API doesn't exist, show manual instructions
+                    savedImagesList.innerHTML = `
+                        <div class="info">
+                            <h4>📁 วิธีใช้ภาพที่บันทึกไว้</h4>
+                            <p>ภาพใบหน้าที่ crop แล้วจากการลงทะเบียนจะถูกบันทึกไว้ที่:</p>
+                            <code>registration-faces/current-registration/</code>
+                            
+                            <h5>📋 ขั้นตอน:</h5>
+                            <ol>
+                                <li>ไปที่โฟลเดอร์ <code>registration-faces/</code> ใน root directory</li>
+                                <li>เลือกภาพ <code>face-crop-XX-YYYY.jpg</code> ที่ต้องการทดสอบ</li>
+                                <li>อัปโหลดผ่านปุ่ม "อัปโหลดรูป" ด้านบน</li>
+                                <li>ทดสอบด้วยปุ่ม "🔑 ทดสอบ Face Login จริง"</li>
+                            </ol>
+                            
+                            <p><strong>💡 เคล็ดลับ:</strong> หากการลงทะเบียนเสร็จแล้ว จะมีภาพ 15 ภาพที่ครอบหน้าแล้ว</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                savedImagesList.innerHTML = `
+                    <div class="error">
+                        <h4>❌ ไม่สามารถโหลดภาพได้</h4>
+                        <p>${error.message}</p>
+                        
+                        <h5>🔧 วิธีแก้ไข:</h5>
+                        <ul>
+                            <li>ตรวจสอบว่าได้ทำการลงทะเบียนและเก็บภาพไว้แล้ว</li>
+                            <li>ตรวจสอบโฟลเดอร์ <code>registration-faces/</code></li>
+                            <li>ใช้การอัปโหลดไฟล์แทน</li>
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        function displaySavedImages(images) {
+            const savedImagesList = document.getElementById('savedImagesList');
+            
+            if (images.length === 0) {
+                savedImagesList.innerHTML = `
+                    <div class="info">
+                        <h4>📂 ไม่พบภาพที่บันทึกไว้</h4>
+                        <p>ทำการลงทะเบียนใบหน้าก่อนเพื่อสร้างภาพ cropped faces</p>
+                        <p>ไปที่ <a href="/register" target="_blank">หน้าลงทะเบียน</a></p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `<div class="info"><p>พบภาพที่บันทึกไว้ ${images.length} ภาพ - คลิกเพื่อเลือก:</p></div>`;
+            
+            images.forEach((image, index) => {
+                html += `
+                    <div class="saved-image-item" onclick="selectSavedImage('${image.path}', ${index})">
+                        <img src="${image.path}" alt="Face ${index + 1}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg=='">
+                        <div class="image-info">
+                            <strong>ภาพที่ ${index + 1}</strong><br>
+                            <small>${image.fileName}</small><br>
+                            <small>${image.size || 'N/A'}</small>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            savedImagesList.innerHTML = html;
+        }
+
+        function selectSavedImage(imagePath, index) {
+            // Remove previous selection
+            document.querySelectorAll('.saved-image-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Add selection to clicked item
+            document.querySelectorAll('.saved-image-item')[index].classList.add('selected');
+            
+            selectedSavedImage = imagePath;
+            document.getElementById('testSelectedBtn').style.display = 'inline-block';
+            
+            console.log('Selected saved image:', imagePath);
+        }
+
+        async function testSelectedImage() {
+            if (!selectedSavedImage) {
+                alert('กรุณาเลือกภาพก่อน');
+                return;
+            }
+
+            const resultDiv = document.getElementById('realLoginResult');
+            resultDiv.innerHTML = '<div class="info">🔄 กำลังทดสอบภาพที่เลือก...</div>';
+
+            try {
+                // Load the selected image and convert to base64
+                const response = await fetch(selectedSavedImage);
+                const blob = await response.blob();
+                
+                const base64Image = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.readAsDataURL(blob);
+                });
+
+                // Test with face recognition API first
+                await testImageWithFaceAPI(base64Image, 'ภาพที่บันทึกไว้');
+                
+                // Then test with login API
+                await testImageWithLoginAPI(base64Image, 'ภาพที่บันทึกไว้');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ ไม่สามารถโหลดภาพได้</h4>
+                        <p>${error.message}</p>
+                        <p>ตรวจสอบว่าไฟล์ยังอยู่ในตำแหน่งเดิม</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testImageWithFaceAPI(base64Image, imageName) {
+            const resultDiv = document.getElementById('realLoginResult');
+            
+            try {
+                const imageBuffer = Uint8Array.from(atob(base64Image), c => c.charCodeAt(0));
+                const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
+                const formData = new FormData();
+                formData.append('file', blob, 'test.jpg');
+                formData.append('mode', 'full_analysis');
+
+                const response = await fetch('http://localhost:8080/api/face-analysis/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                let html = `
+                    <div class="success">
+                        <h4>🔍 ผลการวิเคราะห์ ${imageName}</h4>
+                        <p><strong>Face API Status:</strong> ${response.status}</p>
+                `;
+                
+                if (result.success && result.faces && result.faces.length > 0) {
+                    const face = result.faces[0];
+                    html += `
+                        <p><strong>✅ พบใบหน้า:</strong> ${result.faces.length} หน้า</p>
+                        <p><strong>🎯 ตัวตน:</strong> ${face.identity || 'ไม่ระบุ'}</p>
+                        <p><strong>📊 ความมั่นใจ:</strong> ${(face.recognition_confidence * 100).toFixed(1)}%</p>
+                        <p><strong>🏆 คุณภาพ:</strong> ${face.quality_score.toFixed(1)}%</p>
+                    `;
+                } else {
+                    html += '<p><strong>❌ ไม่พบใบหน้าหรือไม่สามารถจดจำได้</strong></p>';
+                }
+                
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Face API test error:', error);
+            }
+        }
+
+        async function testImageWithLoginAPI(base64Image, imageName) {
+            const resultDiv = document.getElementById('realLoginResult');
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        faceImageBase64: base64Image,
+                        loginMethod: 'face'
+                    })
+                });
+
+                const result = await response.json();
+                
+                let html = resultDiv.innerHTML; // Keep previous results
+                
+                html += `
+                    <div class="${result.success ? 'success' : 'error'}">
+                        <h4>🔐 ผลการทดสอบ Login ${imageName}</h4>
+                        <p><strong>Login API Status:</strong> ${response.status}</p>
+                        <p><strong>ผล:</strong> ${result.success ? '✅ สำเร็จ' : '❌ ล้มเหลว'}</p>
+                        <p><strong>ข้อความ:</strong> ${result.message}</p>
+                `;
+                
+                if (result.success && result.data) {
+                    html += `
+                        <p><strong>👤 User:</strong> ${result.data.user.fullName}</p>
+                        <p><strong>📧 Email:</strong> ${result.data.user.email}</p>
+                        <p><strong>🆔 ID:</strong> ${result.data.user.id}</p>
+                        ${result.data.confidencePercentage ? `<p><strong>📊 ความมั่นใจ:</strong> ${result.data.confidencePercentage}</p>` : ''}
+                    `;
+                }
+                
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Login API test error:', error);
+            }
+        }
+
+        function hideSavedImages() {
+            document.getElementById('savedImagesSection').style.display = 'none';
+            selectedSavedImage = null;
+            document.getElementById('testSelectedBtn').style.display = 'none';
+        }
+
+        // Auto-check gallery on page load
+        window.addEventListener('load', checkGalleryStatus);
+    </script>
+</body>
+</html>

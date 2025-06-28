@@ -462,11 +462,35 @@ class YOLOv11Detector(FaceDetector):
             if not os.path.exists(self.model_path):
                 logger.error(f"Model file not found: {self.model_path}")
                 return False
-
-            # Check CUDA availability
-            if device == "cuda" and not torch.cuda.is_available():
-                logger.warning("CUDA not available, using CPU")
-                device = "cpu"
+            
+            # Check CUDA availability using ONNX Runtime (consistent with YOLOv9)
+            actual_device = "cpu"  # Default to CPU
+            
+            if device == "cuda":
+                try:
+                    # Use PyTorch check first as it's more reliable for Ultralytics
+                    import torch
+                    logger.info(f"🔍 YOLOv11 GPU check - torch.cuda.is_available(): {torch.cuda.is_available()}")
+                    logger.info(f"🔍 YOLOv11 GPU check - torch.cuda.device_count(): {torch.cuda.device_count()}")
+                    
+                    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                        # Additional test to ensure CUDA is actually usable
+                        try:
+                            test_tensor = torch.tensor([1.0])
+                            test_tensor = test_tensor.cuda()
+                            actual_device = "cuda"
+                            logger.info("✅ GPU available and tested for YOLOv11")
+                        except Exception as cuda_error:
+                            logger.warning(f"⚠️ CUDA test failed for YOLOv11: {cuda_error}")
+                            logger.info("🔄 YOLOv11 falling back to CPU")
+                            actual_device = "cpu"
+                    else:
+                        logger.info("ℹ️ PyTorch CUDA not available for YOLOv11 - this is normal in some Docker environments")
+                        logger.info("🔄 YOLOv11 will use CPU (optimized for this environment)")
+                        actual_device = "cpu"
+                except ImportError:
+                    logger.warning("⚠️ PyTorch not available, using CPU for YOLOv11")
+                    actual_device = "cpu"
 
             logger.info(f"Loading {self.model_name} model from: {self.model_path}")
 
@@ -474,10 +498,10 @@ class YOLOv11Detector(FaceDetector):
             from ultralytics import YOLO
 
             self.model = YOLO(self.model_path)
-            self.device = device
+            self.device = actual_device
             self.model_loaded = True
 
-            logger.info(f"✅ {self.model_name} loaded successfully on {device}")
+            logger.info(f"✅ {self.model_name} loaded successfully on {actual_device}")
             return True
         except Exception as e:
             logger.error(f"Failed to load {self.model_name}: {e}")

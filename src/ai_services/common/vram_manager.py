@@ -17,6 +17,13 @@ except ImportError:
     TORCH_AVAILABLE = False
     torch = None
 
+try:
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+    ort = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,8 +78,7 @@ class VRAMManager:
         self.total_vram = self._get_total_vram()
         self.allocated_vram = 0
         self.lock = asyncio.Lock()
-        
-        # Performance tracking
+          # Performance tracking
         self.allocation_history: List[Dict[str, Any]] = []
         self.max_history_size = config.get("max_history_size", 1000)
 
@@ -82,30 +88,86 @@ class VRAMManager:
         )
 
     def _get_total_vram(self) -> int:
-        """Get total available VRAM"""
+        """Get total available VRAM with enhanced detection"""
         try:
-            if TORCH_AVAILABLE and torch and torch.cuda.is_available():
-                device = torch.cuda.current_device()
-                properties = torch.cuda.get_device_properties(device)
-                total_memory: int = int(properties.total_memory)
+            # Enhanced GPU detection
+            logger.info("🔍 Detecting GPU availability...")
+            
+            # Check PyTorch CUDA
+            if not TORCH_AVAILABLE:
+                logger.warning("⚠️ PyTorch not available")
+                return self._check_alternative_gpu_methods()
+                
+            if not torch:
+                logger.warning("⚠️ PyTorch import failed")
+                return self._check_alternative_gpu_methods()
+            
+            # Check CUDA availability with detailed logging
+            cuda_available = torch.cuda.is_available()
+            logger.info(f"🎯 PyTorch CUDA available: {cuda_available}")
+            
+            if cuda_available:
+                try:
+                    # Initialize CUDA context
+                    torch.cuda.init()
+                    device_count = torch.cuda.device_count()
+                    logger.info(f"🎯 CUDA device count: {device_count}")
+                    
+                    if device_count > 0:
+                        device = torch.cuda.current_device()
+                        properties = torch.cuda.get_device_properties(device)
+                        total_memory: int = int(properties.total_memory)
 
-                # Reserve memory for system
-                reserved_mb = self.config.get("reserved_vram_mb", 512)
-                reserved_bytes = reserved_mb * 1024 * 1024
+                        # Reserve memory for system
+                        reserved_mb = self.config.get("reserved_vram_mb", 512)
+                        reserved_bytes = reserved_mb * 1024 * 1024
 
-                usable_memory = max(0, total_memory - reserved_bytes)
+                        usable_memory = max(0, total_memory - reserved_bytes)
 
-                logger.info(f"🎮 GPU: {properties.name}")
-                logger.info(f"💾 Total VRAM: {total_memory / 1024 / 1024:.1f}MB")
-                logger.info(f"🔒 Reserved: {reserved_mb}MB")
-                logger.info(f"✅ Usable: {usable_memory / 1024 / 1024:.1f}MB")
+                        logger.info(f"🎮 GPU: {properties.name}")
+                        logger.info(f"💾 Total VRAM: {total_memory / 1024 / 1024:.1f}MB")
+                        logger.info(f"🔒 Reserved: {reserved_mb}MB")
+                        logger.info(f"✅ Usable: {usable_memory / 1024 / 1024:.1f}MB")
 
-                return int(usable_memory)
+                        return int(usable_memory)
+                    else:
+                        logger.warning("⚠️ No CUDA devices found")
+                        return self._check_alternative_gpu_methods()
+                        
+                except Exception as cuda_init_error:
+                    logger.warning(f"⚠️ CUDA initialization failed: {cuda_init_error}")
+                    return self._check_alternative_gpu_methods()
             else:
-                logger.warning("⚠️ CUDA not available, using CPU-only mode")
-                return 0
+                logger.warning("⚠️ CUDA not available via PyTorch")
+                return self._check_alternative_gpu_methods()
+                
         except Exception as e:
             logger.error(f"❌ Error getting VRAM info: {e}")
+            return self._check_alternative_gpu_methods()
+    
+    def _check_alternative_gpu_methods(self) -> int:
+        """Check for GPU via alternative methods (ONNX Runtime)"""
+        try:
+            if not ONNX_AVAILABLE or not ort:
+                logger.warning("⚠️ ONNX Runtime not available")
+                return 0
+                
+            providers = ort.get_available_providers()
+            logger.info(f"🔍 ONNX Runtime providers: {providers}")
+            
+            if 'CUDAExecutionProvider' in providers:
+                logger.info("✅ CUDA available via ONNX Runtime - using default VRAM allocation")
+                # If ONNX Runtime has CUDA, assume we have some GPU memory
+                # Use a conservative estimate
+                default_vram = self.config.get("default_gpu_vram_mb", 4096) * 1024 * 1024  # 4GB default
+                logger.info(f"📊 Using default VRAM estimate: {default_vram / 1024 / 1024:.1f}MB")
+                return int(default_vram)
+            else:
+                logger.warning("⚠️ No CUDA provider in ONNX Runtime, using CPU-only mode")
+                return 0
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Alternative GPU detection failed: {e}")
             return 0
 
     async def request_model_allocation(
