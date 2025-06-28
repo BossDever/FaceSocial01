@@ -463,3 +463,161 @@ See the OpenAPI docs at `/docs` for full details.
 ## License
 MIT License# FaceSocials
 # FaceSocial01
+
+🚀 **Face Recognition Social Platform** - ระบบแพลตฟอร์มสื่อสังคมออนไลน์พร้อมเทคโนโลジี AI สำหรับการจดจำใบหน้า
+
+## ✨ คุณสมบัติหลัก
+
+- 🤖 **AI Face Recognition** - ระบบจดจำใบหน้าด้วย AI models (YOLO, FaceNet, ArcFace, AdaFace)
+- 🔒 **Face Authentication** - เข้าสู่ระบบด้วยใบหน้า
+- 🛡️ **Anti-Spoofing** - ป้องกันการปลอมแปลงใบหน้า
+- 👥 **Social Media** - ระบบโซเชียลมีเดียครบวงจร
+- 💬 **Real-time Chat** - แชทแบบเรียลไทม์
+- 📊 **Age & Gender Analysis** - วิเคราะห์อายุและเพศ
+- 🔧 **Admin Dashboard** - ระบบจัดการแอดมิน
+
+## 🏗️ สถาปัตยกรรม
+
+- **Backend**: Python + FastAPI + AI/ML Models
+- **Frontend**: TypeScript + React + Next.js  
+- **Database**: PostgreSQL + Redis
+- **AI Models**: YOLO, FaceNet, AdaFace, ArcFace, DeepFace
+- **Infrastructure**: Docker + NVIDIA GPU Support
+
+## 🚀 วิธีการติดตั้งและใช้งาน (One-Click Setup)
+
+### ข้อกำหนดเบื้องต้น
+- Docker Desktop (ติดตั้งและเปิดใช้งานแล้ว)
+- Git (สำหรับ clone repository)
+- อย่างน้อย 8GB RAM
+- 10GB พื้นที่ว่างในฮาร์ดดิสก์
+
+### สำหรับ Windows
+
+1. **Clone repository**
+   ```cmd
+   git clone https://github.com/BossDever/FaceSocial01.git
+   cd FaceSocial01
+   ```
+
+2. **รันไฟล์ setup (คลิกเดียวเสร็จ)**
+   ```cmd
+   quick-setup.bat
+   ```
+   หรือ double-click ที่ไฟล์ `quick-setup.bat`
+
+### สำหรับ Linux/Mac
+
+1. **Clone repository**
+   ```bash
+   git clone https://github.com/BossDever/FaceSocial01.git
+   cd FaceSocial01
+   ```
+
+2. **รันไฟล์ setup (คลิกเดียวเสร็จ)**
+   ```bash
+   chmod +x quick-setup.sh
+   ./quick-setup.sh
+   ```
+
+## 📋 สิ่งที่ Setup Script จะทำให้อัตโนมัติ
+
+✅ ตรวจสอบ Docker installation  
+✅ ตรวจสอบ NVIDIA GPU support  
+✅ สร้าง environment configuration  
+✅ สร้าง database schema  
+✅ ดาวน์โหลด AI models อัตโนมัติ  
+✅ Build และ start ทุก services  
+✅ รอให้ services พร้อมใช้งาน  
+✅ แสดงข้อมูลการเข้าถึงระบบ  
+
+## 🌐 URL การเข้าถึง
+
+หลังจากการติดตั้งเสร็จสิ้น:
+
+- **🖥️ Frontend Application**: http://localhost:3000
+- **🔧 Backend API**: http://localhost:8080  
+- **📚 API Documentation**: http://localhost:8080/docs
+- **🗄️ Database**: localhost:5432
+- **🗄️ Redis Cache**: localhost:6379
+
+## 👤 ข้อมูลการเข้าสู่ระบบ
+
+- **👨‍💼 Admin**: username: `admin`, password: `admin123`
+- **👤 Demo User**: username: `demo_user`, password: `demo123`
+
+## 🛠️ คำสั่งจัดการระบบ
+
+```bash
+# ดูสถานะระบบ
+./monitor-system.sh        # Linux/Mac
+monitor-system.bat         # Windows
+
+# ดู logs
+docker-compose logs -f [service]
+
+# รีสตาร์ทบริการ
+docker-compose restart
+
+# หยุดบริการทั้งหมด
+docker-compose down
+
+# ลบทุกอย่างเพื่อเริ่มใหม่
+docker-compose down -v --rmi all
+```
+
+## 📁 โครงสร้างโปรเจกต์
+
+```
+FaceSocial01/
+├── 🐍 src/                          # Backend Python
+│   ├── ai_services/                 # AI Services
+│   ├── api/                         # API Endpoints  
+│   └── main.py                      # FastAPI App
+├── ⚛️ projec-final-fronend/          # Frontend React
+│   ├── src/                         # React Components
+│   ├── pages/                       # Next.js Pages
+│   └── prisma/                      # Database Schema
+├── 📚 documentation/                # Documentation
+├── 🐳 docker-compose.yml            # Docker Configuration
+├── 🚀 quick-setup.sh               # Linux/Mac Setup
+├── 🚀 quick-setup.bat              # Windows Setup
+└── 📋 README.md                    # This file
+```
+
+## 🔧 การพัฒนาและปรับแต่ง
+
+### Development Mode
+```bash
+# Start in development mode with hot reload
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+### Production Deployment
+```bash
+# Build for production
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+```
+
+### Manual Model Management
+```bash
+# Download specific models
+python scripts/download_models.py --download
+
+# List available models  
+python scripts/download_models.py --list
+```
+
+## 🤝 การสนับสนุน
+
+- 📖 **Documentation**: ดูเอกสารฉบับเต็มใน folder `documentation/`
+- 🐛 **Issues**: รายงานปัญหาได้ที่ GitHub Issues
+- 💡 **Features**: เสนอฟีเจอร์ใหม่ได้ที่ GitHub Discussions
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+**🎯 พร้อมใช้งานแล้ว!** เริ่มต้นด้วยการรัน `quick-setup.bat` (Windows) หรือ `./quick-setup.sh` (Linux/Mac) เพื่อติดตั้งระบบครบวงจรในคลิกเดียว!
